@@ -50,7 +50,7 @@ const StudentLayout = () => {
     ];
 
     return (
-        <Layout style={{ minHeight: '100vh' }}>
+        <Layout style={{ height: '100dvh', overflow: 'hidden' }}>
             <Sider trigger={null} collapsible collapsed={collapsed}>
                 <div
                     style={{
@@ -73,7 +73,7 @@ const StudentLayout = () => {
                     onClick={({ key }) => navigate(key)}
                 />
             </Sider>
-            <Layout>
+            <Layout style={{ display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
                 <Header
                     style={{
                         padding: '0 24px 0 0',
@@ -116,11 +116,13 @@ const StudentLayout = () => {
                 </Header>
                 <Content
                     style={{
-                        margin: '24px 16px',
-                        padding: 24,
-                        minHeight: 280,
+                        margin: '16px 12px',
+                        padding: 16,
                         background: colorBgContainer,
                         borderRadius: borderRadiusLG,
+                        overflowY: 'auto',
+                        flex: 1,
+                        minHeight: 0,
                     }}
                 >
                     <Outlet />

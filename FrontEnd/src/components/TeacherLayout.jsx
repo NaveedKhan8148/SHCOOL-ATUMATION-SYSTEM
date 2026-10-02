@@ -50,7 +50,7 @@ const TeacherLayout = () => {
     }, [base, isClassScreen]);
 
     return (
-        <Layout style={{ minHeight: '100vh' }}>
+        <Layout style={{ height: '100dvh', overflow: 'hidden' }}>
             <Sider trigger={null} collapsible collapsed={collapsed}>
                 <div style={{
                     margin: 16, padding: '12px 14px',
@@ -70,7 +70,7 @@ const TeacherLayout = () => {
                 />
             </Sider>
 
-            <Layout>
+            <Layout style={{ display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
                 <Header style={{
                     padding: '0 24px 0 0',
                     background: colorBgContainer,
@@ -107,11 +107,13 @@ const TeacherLayout = () => {
                 </Header>
 
                 <Content style={{
-                    margin: '24px 16px',
-                    padding: 24,
-                    minHeight: 280,
+                    margin: '16px 12px',
+                    padding: 16,
                     background: colorBgContainer,
                     borderRadius: borderRadiusLG,
+                    overflowY: 'auto',
+                    flex: 1,
+                    minHeight: 0,
                 }}>
                     <Outlet />
                 </Content>

@@ -11,7 +11,6 @@ import {
     FileDoneOutlined,
     LogoutOutlined,
     WarningOutlined,
-    AuditOutlined,
     ReadOutlined,
     BookOutlined,
 } from '@ant-design/icons';
@@ -44,35 +43,50 @@ const MainLayout = () => {
     ];
 
     const items = [
-        { key: '/dashboard', icon: <DashboardOutlined />, label: 'Analytics Dashboard' },
-        { key: '/students', icon: <TeamOutlined />, label: 'Students' },
-        { key: '/teachers', icon: <TeamOutlined />, label: 'Teachers' },
-        { key: '/parents', icon: <TeamOutlined />, label: 'Parents' },
-        { key: '/classes', icon: <BookOutlined />, label: 'Classes' }, // Added Classes
-        { key: '/attendance', icon: <FileDoneOutlined />, label: 'Attendance' },
-        { key: '/fees', icon: <DollarOutlined />, label: 'Fees' },
-        { key: '/timetable', icon: <CalendarOutlined />, label: 'Timetable' },
-        { key: '/results', icon: <ReadOutlined />, label: 'Results' },
-        { key: '/warnings', icon: <WarningOutlined />, label: 'Academic Warnings' },
+        { key: '/dashboard',  icon: <DashboardOutlined />, label: 'Analytics Dashboard' },
+        { key: '/students',   icon: <TeamOutlined />,      label: 'Students' },
+        { key: '/teachers',   icon: <TeamOutlined />,      label: 'Teachers' },
+        { key: '/parents',    icon: <TeamOutlined />,      label: 'Parents' },
+        { key: '/classes',    icon: <BookOutlined />,      label: 'Classes' },
+        { key: '/attendance', icon: <FileDoneOutlined />,  label: 'Attendance' },
+        { key: '/fees',       icon: <DollarOutlined />,    label: 'Fees' },
+        { key: '/timetable',  icon: <CalendarOutlined />,  label: 'Timetable' },
+        { key: '/results',    icon: <ReadOutlined />,      label: 'Results' },
+        { key: '/warnings',   icon: <WarningOutlined />,   label: 'Academic Warnings' },
     ];
 
     return (
-        <Layout style={{ minHeight: '100vh' }}>
-            <Sider trigger={null} collapsible collapsed={collapsed}>
-                <div
-                    style={{
-                        margin: 16,
-                        padding: '8px 12px',
-                        background: 'rgba(255,255,255,0.12)',
-                        borderRadius: 8,
-                        color: '#fff',
-                        fontWeight: 600,
-                        fontSize: 13,
-                        textAlign: 'center',
-                    }}
-                >
-                    {collapsed ? 'SMS' : (user?.username || 'School Admin')}
+        /*
+         * height:100dvh + overflow:hidden keeps the body from scrolling.
+         * Scrolling happens ONLY inside the <Content> below.
+         */
+        <Layout style={{ height: '100dvh', overflow: 'hidden' }}>
+
+            {/* ── Sidebar ─────────────────────────────────────────── */}
+            <Sider
+                trigger={null}
+                collapsible
+                collapsed={collapsed}
+                width={200}
+                style={{ height: '100dvh', overflow: 'auto' }}
+            >
+                {/* Brand badge */}
+                <div style={{
+                    margin: '12px',
+                    padding: '7px 10px',
+                    background: 'rgba(255,255,255,0.12)',
+                    borderRadius: 8,
+                    color: '#fff',
+                    fontWeight: 600,
+                    fontSize: 12,
+                    textAlign: 'center',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                }}>
+                    {collapsed ? '🏫' : (user?.username || 'School Admin')}
                 </div>
+
                 <Menu
                     theme="dark"
                     mode="inline"
@@ -81,56 +95,74 @@ const MainLayout = () => {
                     onClick={({ key }) => navigate(key)}
                 />
             </Sider>
-            <Layout>
-                <Header
-                    style={{
-                        padding: '0 24px 0 0',
-                        background: colorBgContainer,
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                    }}
-                >
+
+            {/* ── Right panel ─────────────────────────────────────── */}
+            <Layout style={{ display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
+
+                {/* Header */}
+                <Header style={{
+                    padding: '0 32px 0 0',
+                    background: colorBgContainer,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    flexShrink: 0,
+                }}>
+                    {/* Sidebar toggle */}
                     <Button
                         type="text"
                         icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-                        onClick={() => setCollapsed(!collapsed)}
-                        style={{
-                            fontSize: '16px',
-                            width: 64,
-                            height: 64,
-                        }}
+                        onClick={() => setCollapsed(v => !v)}
+                        style={{ fontSize: '16px', width: 64, height: 64 }}
                     />
+
+                    {/* Right: org badge + avatar + username */}
                     <Dropdown menu={{ items: userMenu }} placement="bottomRight">
                         <Space style={{ cursor: 'pointer' }}>
                             {user?.organizationId && (
                                 <span style={{
                                     padding: '4px 10px',
-                                    background: 'rgba(102, 126, 234, 0.1)',
+                                    background: 'rgba(102,126,234,0.1)',
                                     color: '#667eea',
                                     borderRadius: '12px',
                                     fontSize: '12px',
                                     fontWeight: 600,
-                                    border: '1px solid rgba(102, 126, 234, 0.2)',
-                                    marginRight: '8px'
+                                    border: '1px solid rgba(102,126,234,0.2)',
+                                    marginRight: 8,
+                                    maxWidth: 140,
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                    display: 'inline-block',
                                 }}>
                                     🏫 {user.organizationId}
                                 </span>
                             )}
                             <Avatar icon={<UserOutlined />} />
-                            <span>{user?.username || user?.email || 'Admin'}</span>
+                            <span style={{
+                                maxWidth: 150,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                display: 'inline-block',
+                                fontSize: 13,
+                            }}>
+                                {user?.username || user?.email || 'Admin'}
+                            </span>
                         </Space>
                     </Dropdown>
                 </Header>
-                <Content
-                    style={{
-                        margin: '24px 16px',
-                        padding: 24,
-                        minHeight: 280,
-                        background: colorBgContainer,
-                        borderRadius: borderRadiusLG,
-                    }}
-                >
+
+                {/* Content — this is the only element that scrolls */}
+                <Content style={{
+                    margin: '16px 12px',
+                    padding: 16,
+                    background: colorBgContainer,
+                    borderRadius: borderRadiusLG,
+                    overflowY: 'auto',   /* scroll happens here, not on body */
+                    flex: 1,
+                    minHeight: 0,        /* critical for flex scroll to work */
+                }}>
                     <Outlet />
                 </Content>
             </Layout>
