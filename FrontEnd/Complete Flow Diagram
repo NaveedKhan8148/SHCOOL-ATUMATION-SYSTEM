@@ -1,0 +1,54 @@
+┌─────────────────────────────────────────────────────────────┐
+│                     SCHOOL MANAGEMENT SYSTEM                 │
+└─────────────────────────────────────────────────────────────┘
+
+1. ADMIN SETUP
+   ├── Create Classes (Grade 10-A, Grade 10-B, etc.)
+   ├── Create Teachers & Assign Subjects
+   └── Set Academic Year
+
+2. STUDENT REGISTRATION FLOW
+   ├── Step 1: Create User Account (role: STUDENT)
+   │   └── POST /api/v1/users/register
+   │
+   ├── Step 2: Create Student Profile
+   │   ├── Link to User (userId)
+   │   ├── Assign Class (classId)
+   │   └── POST /api/v1/students
+   │
+   ├── Step 3: Create/Update Parent
+   │   ├── Create Parent User Account (role: PARENT)
+   │   ├── Create Parent Profile
+   │   ├── Link Student to Parent (studentEmails)
+   │   └── POST /api/v1/parents
+   │
+   └── Step 4: Assign Teacher (Already assigned via Class)
+
+3. AFTER REGISTRATION - DATA RELATIONSHIPS
+   ├── Student ←→ Class (Many-to-One)
+   ├── Student ←→ Parent (Many-to-Many)
+   ├── Class ←→ Teacher (Many-to-Many)
+   └── Teacher ←→ Subjects (One-to-Many)
+
+4. FRONTEND VIEWS
+   ├── Student Dashboard
+   │   ├── View Profile
+   │   ├── View Class & Timetable
+   │   ├── View Teachers
+   │   └── View Parent Info
+   │
+   ├── Parent Dashboard
+   │   ├── View Children's Profiles
+   │   ├── Track Attendance
+   │   └── View Grades
+   │
+   ├── Teacher Dashboard
+   │   ├── View Assigned Classes
+   │   ├── Mark Attendance
+   │   └── Enter Grades
+   │
+   └── Admin Dashboard
+       ├── Manage All Users
+       ├── Create Classes
+       ├── Assign Teachers
+       └── Generate Reports

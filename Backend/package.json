@@ -1,0 +1,30 @@
+{
+  "name": "completeyoutube_project",
+  "version": "1.0.0",
+  "description": "this the complete project of nodejs which will cover all youtube functiolity",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "start": "nodemon -r dotenv/config --experimental-json-modules src/index.js"
+  },
+  "author": "Naveed Khan",
+  "license": "ISC",
+  "devDependencies": {
+    "jest": "^30.3.0",
+    "nodemon": "^3.1.11",
+    "prettier": "^3.7.4"
+  },
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "cloudinary": "^2.8.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.0.2",
+    "mongoose-aggregate-paginate-v2": "^1.1.4",
+    "multer": "^2.1.1"
+  }
+}

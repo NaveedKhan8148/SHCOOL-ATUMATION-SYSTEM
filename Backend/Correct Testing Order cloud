@@ -1,0 +1,502 @@
+1.  POST /users/register        → create admin
+2.  POST /users/login           → get token → set {{token}}
+3.  POST /teachers/             → create teacher → set {{teacherId}}
+4.  POST /classes/              → create class (use teacherId) → set {{classId}}
+5.  POST /students/             → create student (use classId) → set {{studentId}}
+6.  POST /parents/              → create parent → set {{parentId}}
+7.  POST /parents/link-student  → link parent to student
+8.  POST /timetable/            → create schedule
+9.  POST /attendance/           → mark attendance
+10. POST /fees/                 → create fee record
+11. POST /results/              → enter result
+12. POST /warnings/             → issue warning
+
+
+
+
+Here's the complete Postman testing guide in the correct order:
+
+1. AUTH — Register & Login Admin
+Register Admin
+POST http://localhost:8000/api/v1/users/register
+Content-Type: application/json
+
+{
+  "email": "admin@school.edu",
+  "password": "admin123",
+  "role": "ADMIN"
+}
+Login Admin
+POST http://localhost:8000/api/v1/users/login
+Content-Type: application/json
+
+{
+  "email": "admin@school.edu",
+  "password": "admin123"
+}
+Save the accessToken from response — add it to Postman as a collection variable {{token}} and use Bearer {{token}} in Authorization header for all requests below.
+
+2. CLASS
+Create Class (no teacher yet — add teacher after)
+POST http://localhost:8000/api/v1/classes/
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "CS-101",
+  "classTeacherId": "PASTE_TEACHER_ID_AFTER_CREATING_TEACHER"
+}
+
+Create teacher first (Step 3), then come back and create the class with the real teacherId, OR create class with a placeholder and update it after.
+
+Get All Classes
+GET http://localhost:8000/api/v1/classes/
+Authorization: Bearer {{token}}
+Get Class by ID
+GET http://localhost:8000/api/v1/classes/:id
+Authorization: Bearer {{token}}
+Update Class
+PATCH http://localhost:8000/api/v1/classes/:id
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "CS-101-Updated",
+  "classTeacherId": "TEACHER_MONGO_ID"
+}
+Delete Class
+DELETE http://localhost:8000/api/v1/classes/:id
+Authorization: Bearer {{token}}
+
+3. TEACHER
+Create Teacher
+POST http://localhost:8000/api/v1/teachers/
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "email": "john.smith@school.edu",
+  "password": "teacher123",
+  "name": "John Smith",
+  "cnicNumber": "12345-6789012-3",
+  "contactNumber": "0300-1234567",
+  "subject": "Mathematics",
+  "dateOfJoining": "2024-01-15",
+  "address": "123 Main Street, Lahore"
+}
+Save the _id from response as {{teacherId}}
+Get All Teachers
+GET http://localhost:8000/api/v1/teachers/
+Authorization: Bearer {{token}}
+Get Teacher by ID
+GET http://localhost:8000/api/v1/teachers/{{teacherId}}
+Authorization: Bearer {{token}}
+Update Teacher
+PATCH http://localhost:8000/api/v1/teachers/{{teacherId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "John Smith",
+  "contactNumber": "0300-9999999",
+  "subject": "Physics",
+  "address": "456 New Street, Lahore"
+}
+Delete Teacher
+DELETE http://localhost:8000/api/v1/teachers/{{teacherId}}
+Authorization: Bearer {{token}}
+Teacher Login
+POST http://localhost:8000/api/v1/users/login
+Content-Type: application/json
+
+{
+  "email": "john.smith@school.edu",
+  "password": "teacher123"
+}
+
+4. STUDENT
+Create Student
+POST http://localhost:8000/api/v1/students/
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "email": "ali.hassan@school.edu",
+  "password": "student123",
+  "rollNo": "2024-CS-001",
+  "studentName": "Ali Hassan",
+  "address": "789 Park Road, Karachi",
+  "dateOfJoining": "2024-09-01",
+  "classId": "{{classId}}"
+}
+Save the _id as {{studentId}}
+Create Second Student (for testing bulk operations)
+POST http://localhost:8000/api/v1/students/
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "email": "sara.khan@school.edu",
+  "password": "student123",
+  "rollNo": "2024-CS-002",
+  "studentName": "Sara Khan",
+  "address": "321 Garden Town, Lahore",
+  "dateOfJoining": "2024-09-01",
+  "classId": "{{classId}}"
+}
+Get All Students
+GET http://localhost:8000/api/v1/students/
+Authorization: Bearer {{token}}
+Get Student by ID
+GET http://localhost:8000/api/v1/students/{{studentId}}
+Authorization: Bearer {{token}}
+Get Students by Class
+GET http://localhost:8000/api/v1/students/class/{{classId}}
+Authorization: Bearer {{token}}
+Update Student
+PATCH http://localhost:8000/api/v1/students/{{studentId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "studentName": "Ali Hassan Updated",
+  "address": "New Address, Karachi",
+  "rollNo": "2024-CS-001"
+}
+Delete Student
+DELETE http://localhost:8000/api/v1/students/{{studentId}}
+Authorization: Bearer {{token}}
+Student Login
+POST http://localhost:8000/api/v1/users/login
+Content-Type: application/json
+
+{
+  "email": "ali.hassan@school.edu",
+  "password": "student123"
+}
+
+5. PARENT
+Create Parent
+POST http://localhost:8000/api/v1/parents/
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "email": "hassan.khan@gmail.com",
+  "password": "parent123",
+  "name": "Hassan Khan",
+  "cnicNo": "12345-9876543-1",
+  "contactNumber": "0321-9876543"
+}
+Save the _id as {{parentId}}
+Get All Parents
+GET http://localhost:8000/api/v1/parents/
+Authorization: Bearer {{token}}
+Get Parent by ID
+GET http://localhost:8000/api/v1/parents/{{parentId}}
+Authorization: Bearer {{token}}
+Update Parent
+PATCH http://localhost:8000/api/v1/parents/{{parentId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Hassan Khan",
+  "contactNumber": "0321-1111111"
+}
+Link Parent to Student
+POST http://localhost:8000/api/v1/parents/link-student
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "studentId": "{{studentId}}",
+  "parentId": "{{parentId}}",
+  "relationship": "Father"
+}
+Get Students of a Parent
+GET http://localhost:8000/api/v1/parents/{{parentId}}/students
+Authorization: Bearer {{token}}
+Delete Parent
+DELETE http://localhost:8000/api/v1/parents/{{parentId}}
+Authorization: Bearer {{token}}
+Parent Login
+POST http://localhost:8000/api/v1/users/login
+Content-Type: application/json
+
+{
+  "email": "hassan.khan@gmail.com",
+  "password": "parent123"
+}
+
+6. ATTENDANCE
+Mark Single Attendance
+POST http://localhost:8000/api/v1/attendance/
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "studentId": "{{studentId}}",
+  "classId": "{{classId}}",
+  "date": "2024-11-01",
+  "status": "Present"
+}
+Mark Bulk Attendance (whole class in one call)
+POST http://localhost:8000/api/v1/attendance/bulk
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "records": [
+    {
+      "studentId": "{{studentId}}",
+      "classId": "{{classId}}",
+      "date": "2024-11-02",
+      "status": "Present"
+    },
+    {
+      "studentId": "SECOND_STUDENT_ID",
+      "classId": "{{classId}}",
+      "date": "2024-11-02",
+      "status": "Absent"
+    }
+  ]
+}
+Get Attendance by Student (all records)
+GET http://localhost:8000/api/v1/attendance/student/{{studentId}}
+Authorization: Bearer {{token}}
+Get Attendance by Student (date range filter)
+GET http://localhost:8000/api/v1/attendance/student/{{studentId}}?from=2024-11-01&to=2024-11-30
+Authorization: Bearer {{token}}
+Get Attendance by Class on a specific date
+GET http://localhost:8000/api/v1/attendance/class/{{classId}}?date=2024-11-01
+Authorization: Bearer {{token}}
+Update Attendance Record
+PATCH http://localhost:8000/api/v1/attendance/{{attendanceId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "status": "Late"
+}
+Delete Attendance Record
+DELETE http://localhost:8000/api/v1/attendance/{{attendanceId}}
+Authorization: Bearer {{token}}
+
+7. FEES
+Create Fee Record
+POST http://localhost:8000/api/v1/fees/
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "studentId": "{{studentId}}",
+  "feeType": "Tuition",
+  "amount": 15000,
+  "dueDate": "2024-11-30"
+}
+Create Lab Fee
+POST http://localhost:8000/api/v1/fees/
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "studentId": "{{studentId}}",
+  "feeType": "Lab",
+  "amount": 3000,
+  "dueDate": "2024-11-30"
+}
+Get All Fees for Student
+GET http://localhost:8000/api/v1/fees/student/{{studentId}}
+Authorization: Bearer {{token}}
+Get Pending Fees for Student
+GET http://localhost:8000/api/v1/fees/student/{{studentId}}/pending
+Authorization: Bearer {{token}}
+Mark Fee as Paid
+PATCH http://localhost:8000/api/v1/fees/{{feeId}}/pay
+Authorization: Bearer {{token}}
+Update Fee
+PATCH http://localhost:8000/api/v1/fees/{{feeId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "amount": 16000,
+  "dueDate": "2024-12-15",
+  "status": "Overdue"
+}
+Delete Fee
+DELETE http://localhost:8000/api/v1/fees/{{feeId}}
+Authorization: Bearer {{token}}
+
+8. RESULTS
+Create Result
+POST http://localhost:8000/api/v1/results/
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "studentId": "{{studentId}}",
+  "classId": "{{classId}}",
+  "subject": "Mathematics",
+  "marks": 85,
+  "grade": "A",
+  "semester": "Fall-2024"
+}
+Create Another Subject Result
+POST http://localhost:8000/api/v1/results/
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "studentId": "{{studentId}}",
+  "classId": "{{classId}}",
+  "subject": "Physics",
+  "marks": 72,
+  "grade": "B",
+  "semester": "Fall-2024"
+}
+Get Results by Student
+GET http://localhost:8000/api/v1/results/student/{{studentId}}
+Authorization: Bearer {{token}}
+Get Results by Student filtered by Semester
+GET http://localhost:8000/api/v1/results/student/{{studentId}}?semester=Fall-2024
+Authorization: Bearer {{token}}
+Get Results by Class
+GET http://localhost:8000/api/v1/results/class/{{classId}}?semester=Fall-2024
+Authorization: Bearer {{token}}
+Update Result
+PATCH http://localhost:8000/api/v1/results/{{resultId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "marks": 90,
+  "grade": "A+"
+}
+Delete Result
+DELETE http://localhost:8000/api/v1/results/{{resultId}}
+Authorization: Bearer {{token}}
+
+9. TIMETABLE
+Create Timetable Entry
+POST http://localhost:8000/api/v1/timetable/
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "classId": "{{classId}}",
+  "teacherId": "{{teacherId}}",
+  "dayOfWeek": "Monday",
+  "timeSlot": "08:00-09:00",
+  "subject": "Mathematics",
+  "roomLocation": "Room 101"
+}
+Create More Entries for Full Week
+POST http://localhost:8000/api/v1/timetable/
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "classId": "{{classId}}",
+  "teacherId": "{{teacherId}}",
+  "dayOfWeek": "Tuesday",
+  "timeSlot": "09:00-10:00",
+  "subject": "Physics",
+  "roomLocation": "Lab 2"
+}
+Get Timetable by Class
+GET http://localhost:8000/api/v1/timetable/class/{{classId}}
+Authorization: Bearer {{token}}
+Get Timetable by Teacher
+GET http://localhost:8000/api/v1/timetable/teacher/{{teacherId}}
+Authorization: Bearer {{token}}
+Update Timetable Entry
+PATCH http://localhost:8000/api/v1/timetable/{{timetableId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "roomLocation": "Room 205",
+  "timeSlot": "10:00-11:00"
+}
+Delete Timetable Entry
+DELETE http://localhost:8000/api/v1/timetable/{{timetableId}}
+Authorization: Bearer {{token}}
+
+10. ACADEMIC WARNINGS
+Issue Warning
+POST http://localhost:8000/api/v1/warnings/
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "studentId": "{{studentId}}",
+  "ruleViolated": "Attendance Below 75%",
+  "detailDescription": "Student has been absent for 12 consecutive days without any notice.",
+  "warningDate": "2024-11-05"
+}
+Get All Warnings
+GET http://localhost:8000/api/v1/warnings/
+Authorization: Bearer {{token}}
+Get Warnings by Student
+GET http://localhost:8000/api/v1/warnings/student/{{studentId}}
+Authorization: Bearer {{token}}
+Update Warning
+PATCH http://localhost:8000/api/v1/warnings/{{warningId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "ruleViolated": "Attendance Below 75%",
+  "detailDescription": "Updated: Student attendance is now at 60% for the semester."
+}
+Delete Warning
+DELETE http://localhost:8000/api/v1/warnings/{{warningId}}
+Authorization: Bearer {{token}}
+
+11. USER MANAGEMENT (Admin)
+Get All Users
+GET http://localhost:8000/api/v1/users/
+Authorization: Bearer {{token}}
+Change Password (logged in user)
+POST http://localhost:8000/api/v1/users/change-password
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "oldPassword": "admin123",
+  "newPassword": "newAdmin456"
+}
+Deactivate a User
+PATCH http://localhost:8000/api/v1/users/{{userId}}/status
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "status": "INACTIVE"
+}
+Delete User
+DELETE http://localhost:8000/api/v1/users/{{userId}}
+Authorization: Bearer {{token}}
+Logout
+POST http://localhost:8000/api/v1/users/logout
+Authorization: Bearer {{token}}
+
+Postman Collection Variables to Set
+In your Postman collection, set these variables and update them as you create each record:
+VariableDescription{{token}}Access token from login response{{classId}}_id from create class response{{teacherId}}_id from create teacher response{{studentId}}_id from create student response{{parentId}}_id from create parent response{{attendanceId}}_id from mark attendance response{{feeId}}_id from create fee response{{resultId}}_id from create result response{{timetableId}}_id from create timetable response{{warningId}}_id from create warning response
+
+Correct Testing Order
+1.  POST /users/register        → create admin
+2.  POST /users/login           → get token → set {{token}}
+3.  POST /teachers/             → create teacher → set {{teacherId}}
+4.  POST /classes/              → create class (use teacherId) → set {{classId}}
+5.  POST /students/             → create student (use classId) → set {{studentId}}
+6.  POST /parents/              → create parent → set {{parentId}}
+7.  POST /parents/link-student  → link parent to student
+8.  POST /timetable/            → create schedule
+9.  POST /attendance/           → mark attendance
+10. POST /fees/                 → create fee record
+11. POST /results/              → enter result
+12. POST /warnings/             → issue warning

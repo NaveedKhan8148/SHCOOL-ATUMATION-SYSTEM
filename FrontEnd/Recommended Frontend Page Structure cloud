@@ -1,0 +1,26 @@
+src/pages/
+├── admin/
+│   ├── ManageClasses.jsx      → CRUD classes
+│   ├── ManageTeachers.jsx     → CRUD teachers
+│   ├── ManageStudents.jsx     → CRUD students
+│   ├── ManageParents.jsx      → CRUD parents + link to student
+│   ├── ManageFees.jsx         → create/pay fees
+│   └── ManageWarnings.jsx     → issue warnings
+│
+├── teacher/
+│   ├── MyTimetable.jsx        → GET timetable/teacher/:id
+│   ├── MarkAttendance.jsx     → POST attendance/bulk
+│   └── EnterResults.jsx       → POST results/
+│
+├── student/
+│   ├── MyTimetable.jsx        → GET timetable/class/:classId
+│   ├── MyAttendance.jsx       → GET attendance/student/:id
+│   ├── MyResults.jsx          → GET results/student/:id
+│   └── MyFees.jsx             → GET fees/student/:id/pending
+│
+└── parent/
+    ├── ChildOverview.jsx      → GET parents/:id/students
+    ├── ChildAttendance.jsx
+    ├── ChildResults.jsx
+    ├── ChildFees.jsx
+    └── ChildWarnings.jsx
