@@ -12,6 +12,7 @@ const createWarning = asyncHandler(async (req, res) => {
         throw new ApiError(400, "studentId, ruleViolated and detailDescription are required");
     }
 
+
     const warning = await AcademicWarning.create({
         organizationId,
         studentId,
