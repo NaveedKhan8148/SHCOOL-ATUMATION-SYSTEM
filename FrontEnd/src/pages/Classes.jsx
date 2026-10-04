@@ -483,15 +483,15 @@ const Classes = () => {
 
                     <Form.Item
                         name="classTeacherId"
-                        label="Class Teacher"
-                        rules={[{ required: true, message: 'Please select a class teacher' }]}
+                        label="Class Teacher (Optional)"
                     >
                         <Select
-                            placeholder="Select class teacher"
+                            placeholder="Select class teacher (can be assigned later)"
                             showSearch
                             optionFilterProp="children"
                             loading={teachers.length === 0}
                             size="large"
+                            allowClear
                         >
                             {teachers.map((teacher) => (
                                 <Option key={teacher._id} value={teacher._id}>

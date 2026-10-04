@@ -8,8 +8,8 @@ const createClass = asyncHandler(async (req, res) => {
     const { name, classTeacherId, section, academicYear } = req.body;
     const organizationId = req.user.organizationId;
 
-    if (!name?.trim() || !classTeacherId) {
-        throw new ApiError(400, "name and classTeacherId are required");
+    if (!name?.trim()) {
+        throw new ApiError(400, "Class name is required");
     }
 
     const existing = await Class.findOne({ organizationId, name });

@@ -16,7 +16,8 @@ const classSchema = new Schema(
         classTeacherId: {
             type: Schema.Types.ObjectId,
             ref: "Teacher",
-            required: true,
+            required: false,
+            default: null,
         },
         section:{
             type: String,
