@@ -33,6 +33,8 @@ import ParentResults from './pages/ParentResults';
 import ParentTimetable from './pages/ParentTimetable';
 import Classes from './pages/Classes';
 import RegisterOrganization from './pages/RegisterOrganization';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 import './App.css';
 
 const RoleBasedRedirect = () => {
@@ -88,6 +90,8 @@ const AppRoutes = () => {
             {/* Public */}
             <Route path="/login" element={<Login />} />
             <Route path="/register-organization" element={<RegisterOrganization />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/" element={<RoleBasedRedirect />} />
 
             {/* Admin */}

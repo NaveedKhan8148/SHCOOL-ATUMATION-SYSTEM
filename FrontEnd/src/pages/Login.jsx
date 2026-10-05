@@ -428,6 +428,13 @@ const Login = () => {
                             </div>
                         )}
 
+                        {/* Forgot password link */}
+                        <div style={{ textAlign: 'right', marginTop: -8, marginBottom: 'clamp(8px,1.2vh,12px)' }}>
+                            <Link to="/forgot-password" style={{ color: '#667eea', fontSize: 12, fontWeight: 500 }}>
+                                Forgot password?
+                            </Link>
+                        </div>
+
                         <Form.Item style={{ marginBottom: 'clamp(6px, 1vh, 10px)' }}>
                             <Button
                                 type="primary"

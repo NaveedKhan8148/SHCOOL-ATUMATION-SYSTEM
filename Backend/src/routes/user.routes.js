@@ -13,11 +13,16 @@ import {
 } from "../controllers/user.controller.js";
 import { verifyJWT } from "../middlewares/auth.middleware.js";
 
-const router = Router();
+import { forgotPassword, resetPassword } from "../controllers/forgotPassword.controller.js";
 
+const router = Router();
 
 router.route("/login").post(loginUser);
 router.route("/refresh-token").post(refreshAccessToken);
+
+// ── Public: password reset (no auth needed) ───────────────────────────────────
+router.route("/forgot-password").post(forgotPassword);
+router.route("/reset-password").post(resetPassword);
 
 // Secured
 router.route("/register").post(verifyJWT,registerUser);
