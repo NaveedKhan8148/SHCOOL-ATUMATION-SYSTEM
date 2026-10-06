@@ -30,6 +30,9 @@ import timetableRouter from "./routes/timetable.routes.js"
 import warningRouter from "./routes/academicWarning.routes.js"
 import workflowRouter from "./routes/approvalWorkflow.routes.js"
 import analyticsRouter from "./routes/analytics.routes.js"
+import academicSessionRouter from "./routes/academicSession.routes.js"
+import payrollRouter from "./routes/payroll.routes.js"
+import expenseRouter from "./routes/expense.routes.js"
 
 // ── Existing route declarations ───────────────────────────────────────────────
 app.use("/api/v1/users", userRouter)
@@ -47,6 +50,9 @@ app.use("/api/v1/timetable", timetableRouter)
 app.use("/api/v1/warnings", warningRouter)
 app.use("/api/v1/workflows", workflowRouter)
 app.use("/api/v1/analytics", analyticsRouter)
+app.use("/api/v1/academic-sessions", academicSessionRouter)
+app.use("/api/v1/payroll", payrollRouter)
+app.use("/api/v1/expenses", expenseRouter)
 
 // ============= ERROR HANDLING MIDDLEWARE (ADD THIS) =============
 // This MUST be after all routes and before export

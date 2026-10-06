@@ -3,6 +3,8 @@ import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { Student } from "../models/student.model.js";
 import { User } from "../models/user.model.js";
+import { Class } from "../models/class.model.js";
+import { AcademicSession } from "../models/academicSession.model.js";
 
 // POST /api/v1/students/
 const createStudent = asyncHandler(async (req, res) => {
@@ -91,4 +93,92 @@ const getMyStudentProfile = asyncHandler(async (req, res) => {
     return res.status(200).json(new ApiResponse(200, student, "Profile fetched"));
 });
 
-export { createStudent, getAllStudents, getStudentById, getStudentsByClass, updateStudent, deleteStudent, getMyStudentProfile };
+// POST /api/v1/students/bulk-promote
+const bulkPromoteStudents = asyncHandler(async (req, res) => {
+    const { sourceClassId, targetClassId, targetSessionId, promotions } = req.body;
+    const organizationId = req.user.organizationId;
+
+    if (!sourceClassId || !targetSessionId || !Array.isArray(promotions) || promotions.length === 0) {
+        throw new ApiError(400, "sourceClassId, targetSessionId, and promotions array are required");
+    }
+
+    const targetSession = await AcademicSession.findOne({ _id: targetSessionId, organizationId });
+    const sourceClass = await Class.findOne({ _id: sourceClassId, organizationId });
+    const targetClass = targetClassId ? await Class.findOne({ _id: targetClassId, organizationId }) : null;
+
+    let promotedCount = 0;
+    let retainedCount = 0;
+    let graduatedCount = 0;
+
+    for (const item of promotions) {
+        const { studentId, action, newRollNo, remarks } = item;
+        const student = await Student.findOne({ _id: studentId, organizationId }).populate("classId");
+
+        if (!student) continue;
+
+        // Archive current session/class history entry
+        const historyEntry = {
+            sessionId: student.academicSessionId || null,
+            sessionName: targetSession ? targetSession.name : "",
+            classId: student.classId?._id || student.classId,
+            className: student.classId?.name || sourceClass?.name || "",
+            rollNo: student.rollNo,
+            status: action || "PROMOTED",
+            promotedAt: new Date(),
+            remarks: remarks || ""
+        };
+
+        student.sessionHistory.push(historyEntry);
+
+        if (action === "GRADUATE") {
+            student.status = "GRADUATED";
+            student.academicSessionId = targetSessionId;
+            graduatedCount++;
+        } else if (action === "RETAIN") {
+            student.status = "ACTIVE";
+            student.academicSessionId = targetSessionId;
+            if (newRollNo) student.rollNo = newRollNo;
+            retainedCount++;
+        } else {
+            // Default: PROMOTE
+            if (targetClassId) {
+                student.classId = targetClassId;
+            }
+            student.status = "ACTIVE";
+            student.academicSessionId = targetSessionId;
+            if (newRollNo) student.rollNo = newRollNo;
+            promotedCount++;
+        }
+
+        await student.save();
+    }
+
+    return res.status(200).json(
+        new ApiResponse(200, { promotedCount, retainedCount, graduatedCount }, "Bulk promotion processed successfully")
+    );
+});
+
+// GET /api/v1/students/alumni
+const getAlumniStudents = asyncHandler(async (req, res) => {
+    const alumni = await Student.find({
+        organizationId: req.user.organizationId,
+        status: { $in: ["ALUMNI", "GRADUATED"] }
+    })
+        .populate("userId", "-password -refreshToken")
+        .populate("classId", "name")
+        .sort({ updatedAt: -1 });
+
+    return res.status(200).json(new ApiResponse(200, alumni, "Alumni students fetched"));
+});
+
+export {
+    createStudent,
+    getAllStudents,
+    getStudentById,
+    getStudentsByClass,
+    updateStudent,
+    deleteStudent,
+    getMyStudentProfile,
+    bulkPromoteStudents,
+    getAlumniStudents
+};

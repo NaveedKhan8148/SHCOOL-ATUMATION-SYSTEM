@@ -32,6 +32,11 @@ import ParentFees from './pages/ParentFees';
 import ParentResults from './pages/ParentResults';
 import ParentTimetable from './pages/ParentTimetable';
 import Classes from './pages/Classes';
+import AcademicSessions from './pages/AcademicSessions';
+import StudentPromotion from './pages/StudentPromotion';
+import AlumniDirectory from './pages/AlumniDirectory';
+import Payroll from './pages/Payroll';
+import Expenses from './pages/Expenses';
 import RegisterOrganization from './pages/RegisterOrganization';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
@@ -96,16 +101,21 @@ const AppRoutes = () => {
 
             {/* Admin */}
             <Route element={<ProtectedRoute allowedRoles={['ADMIN']}><MainLayout /></ProtectedRoute>}>
-                <Route path="dashboard"  element={<Dashboard />} />
-                <Route path="students"   element={<Students />} />
-                <Route path="teachers"   element={<Teachers />} />
-                <Route path="parents"    element={<Parents />} />
-                <Route path="classes"    element={<Classes />} />
-                <Route path="attendance" element={<Attendance />} />
-                <Route path="fees"       element={<Fees />} />
-                <Route path="timetable"  element={<Timetable />} />
-                <Route path="results"    element={<Results />} />
-                <Route path="warnings"   element={<AcademicWarnings />} />
+                <Route path="dashboard"          element={<Dashboard />} />
+                <Route path="academic-sessions"  element={<AcademicSessions />} />
+                <Route path="student-promotion"  element={<StudentPromotion />} />
+                <Route path="alumni-directory"   element={<AlumniDirectory />} />
+                <Route path="students"           element={<Students />} />
+                <Route path="teachers"           element={<Teachers />} />
+                <Route path="parents"            element={<Parents />} />
+                <Route path="classes"            element={<Classes />} />
+                <Route path="attendance"         element={<Attendance />} />
+                <Route path="fees"               element={<Fees />} />
+                <Route path="payroll"            element={<Payroll />} />
+                <Route path="expenses"           element={<Expenses />} />
+                <Route path="timetable"          element={<Timetable />} />
+                <Route path="results"            element={<Results />} />
+                <Route path="warnings"           element={<AcademicWarnings />} />
             </Route>
 
             {/* Teacher */}

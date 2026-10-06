@@ -13,6 +13,10 @@ import {
     WarningOutlined,
     ReadOutlined,
     BookOutlined,
+    SolutionOutlined,
+    CrownOutlined,
+    BankOutlined,
+    AccountBookOutlined,
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -43,16 +47,21 @@ const MainLayout = () => {
     ];
 
     const items = [
-        { key: '/dashboard',  icon: <DashboardOutlined />, label: 'Analytics Dashboard' },
-        { key: '/students',   icon: <TeamOutlined />,      label: 'Students' },
-        { key: '/teachers',   icon: <TeamOutlined />,      label: 'Teachers' },
-        { key: '/parents',    icon: <TeamOutlined />,      label: 'Parents' },
-        { key: '/classes',    icon: <BookOutlined />,      label: 'Classes' },
-        { key: '/attendance', icon: <FileDoneOutlined />,  label: 'Attendance' },
-        { key: '/fees',       icon: <DollarOutlined />,    label: 'Fees' },
-        { key: '/timetable',  icon: <CalendarOutlined />,  label: 'Timetable' },
-        { key: '/results',    icon: <ReadOutlined />,      label: 'Results' },
-        { key: '/warnings',   icon: <WarningOutlined />,   label: 'Academic Warnings' },
+        { key: '/dashboard',         icon: <DashboardOutlined />,   label: 'Analytics Dashboard' },
+        { key: '/academic-sessions', icon: <CalendarOutlined />,    label: 'Academic Sessions' },
+        { key: '/students',          icon: <TeamOutlined />,        label: 'Students' },
+        { key: '/student-promotion', icon: <SolutionOutlined />,    label: 'Student Promotion' },
+        { key: '/alumni-directory',  icon: <CrownOutlined />,       label: 'Alumni Directory' },
+        { key: '/teachers',          icon: <TeamOutlined />,        label: 'Teachers' },
+        { key: '/parents',           icon: <TeamOutlined />,        label: 'Parents' },
+        { key: '/classes',           icon: <BookOutlined />,        label: 'Classes' },
+        { key: '/attendance',        icon: <FileDoneOutlined />,    label: 'Attendance' },
+        { key: '/fees',              icon: <DollarOutlined />,      label: 'Fees & Vouchers' },
+        { key: '/payroll',           icon: <BankOutlined />,        label: 'Staff Payroll' },
+        { key: '/expenses',          icon: <AccountBookOutlined />, label: 'Expense Ledger' },
+        { key: '/timetable',         icon: <CalendarOutlined />,    label: 'Timetable' },
+        { key: '/results',           icon: <ReadOutlined />,        label: 'Results' },
+        { key: '/warnings',          icon: <WarningOutlined />,     label: 'Academic Warnings' },
     ];
 
     return (

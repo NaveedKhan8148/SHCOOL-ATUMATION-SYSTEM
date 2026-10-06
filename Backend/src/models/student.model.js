@@ -34,7 +34,7 @@ const studentSchema = new Schema(
         },
         status: {
             type: String,
-            enum: ["ACTIVE", "INACTIVE"],
+            enum: ["ACTIVE", "INACTIVE", "PROMOTED", "RETAINED", "ALUMNI", "GRADUATED"],
             default: "ACTIVE",
         },
         classId: {
@@ -42,6 +42,23 @@ const studentSchema = new Schema(
             ref: "Class",
             required: true,
         },
+        academicSessionId: {
+            type: Schema.Types.ObjectId,
+            ref: "AcademicSession",
+            required: false,
+        },
+        sessionHistory: [
+            {
+                sessionId: { type: Schema.Types.ObjectId, ref: "AcademicSession" },
+                sessionName: { type: String, trim: true },
+                classId: { type: Schema.Types.ObjectId, ref: "Class" },
+                className: { type: String, trim: true },
+                rollNo: { type: String, trim: true },
+                status: { type: String, trim: true },
+                promotedAt: { type: Date, default: Date.now },
+                remarks: { type: String, default: "" }
+            }
+        ],
     },
     { timestamps: true }
 );
