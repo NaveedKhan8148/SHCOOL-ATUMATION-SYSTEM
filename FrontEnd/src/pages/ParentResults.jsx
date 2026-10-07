@@ -7,11 +7,13 @@ import {
 import { 
     SearchOutlined, BookOutlined, RiseOutlined, 
     FallOutlined, TrophyOutlined, UserOutlined,
-    CheckCircleOutlined, CloseCircleOutlined, ReloadOutlined
+    CheckCircleOutlined, CloseCircleOutlined, ReloadOutlined,
+    PrinterOutlined
 } from '@ant-design/icons';
 import axios from 'axios';
 import dayjs from 'dayjs';
 import { useChildStudent } from '../hooks/useChildStudent';
+import { generateStudentTranscriptPDF } from '../utils/transcriptGenerator';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -256,6 +258,18 @@ const ParentResults = () => {
         );
     }
 
+    const handleDownloadTranscript = () => {
+        if (!results || results.length === 0) return;
+        generateStudentTranscriptPDF({
+            studentName: child?.studentName || 'Student',
+            rollNo: child?.rollNo || '-',
+            fatherName: child?.fatherName || '-',
+            className: child?.classId?.name || '-',
+            semester: selectedSemester || 'Academic Session',
+            results: filteredResults.length > 0 ? filteredResults : results
+        });
+    };
+
     if (childError || !child) {
         return <Text type="danger">{childError || 'No linked student found.'}</Text>;
     }
@@ -263,13 +277,26 @@ const ParentResults = () => {
     return (
         <div>
             {/* Header */}
-            <div style={{ marginBottom: 24 }}>
-                <Title level={2} style={{ margin: 0 }}>
-                    Results & Grades
-                </Title>
-                <Text type="secondary">
-                    Academic performance for <strong>{child.studentName}</strong> ({child.rollNo})
-                </Text>
+            <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                    <Title level={2} style={{ margin: 0 }}>
+                        Results & Grades
+                    </Title>
+                    <Text type="secondary">
+                        Academic performance for <strong>{child.studentName}</strong> ({child.rollNo})
+                    </Text>
+                </div>
+                {results.length > 0 && (
+                    <Button
+                        type="primary"
+                        style={{ backgroundColor: '#52c41a', borderColor: '#52c41a' }}
+                        icon={<PrinterOutlined />}
+                        size="large"
+                        onClick={handleDownloadTranscript}
+                    >
+                        Download Child Transcript (PDF)
+                    </Button>
+                )}
             </div>
 
             {/* Student Info Card */}

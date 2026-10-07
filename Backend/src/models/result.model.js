@@ -28,6 +28,11 @@ const resultSchema = new Schema(
             required: true,
             min: 0,
         },
+        maxMarks: {
+            type: Number,
+            default: 100,
+            min: 1,
+        },
         grade: {
             type: String,
             required: true,

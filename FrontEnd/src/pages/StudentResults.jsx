@@ -7,11 +7,13 @@ import {
 import { 
     SearchOutlined, BookOutlined, RiseOutlined, 
     TrophyOutlined, UserOutlined, ReloadOutlined,
-    CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined
+    CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined,
+    PrinterOutlined
 } from '@ant-design/icons';
 import axios from 'axios';
 import dayjs from 'dayjs';
 import { useAuth } from '../context/AuthContext';
+import { generateStudentTranscriptPDF } from '../utils/transcriptGenerator';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -256,6 +258,18 @@ const StudentResults = () => {
         );
     }
 
+    const handleDownloadTranscript = () => {
+        if (!results || results.length === 0) return;
+        generateStudentTranscriptPDF({
+            studentName: profile?.studentName || 'Student',
+            rollNo: profile?.rollNo || '-',
+            fatherName: profile?.fatherName || '-',
+            className: profile?.classId?.name || '-',
+            semester: selectedSemester || 'Academic Session',
+            results: filteredResults.length > 0 ? filteredResults : results
+        });
+    };
+
     if (!profile) {
         return <Text type="danger">Profile not found.</Text>;
     }
@@ -263,13 +277,26 @@ const StudentResults = () => {
     return (
         <div>
             {/* Header */}
-            <div style={{ marginBottom: 24 }}>
-                <Title level={2} style={{ margin: 0 }}>
-                    My Results & Grades
-                </Title>
-                <Text type="secondary">
-                    Academic performance for <strong>{profile.studentName}</strong> ({profile.rollNo})
-                </Text>
+            <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                    <Title level={2} style={{ margin: 0 }}>
+                        My Results & Grades
+                    </Title>
+                    <Text type="secondary">
+                        Academic performance for <strong>{profile.studentName}</strong> ({profile.rollNo})
+                    </Text>
+                </div>
+                {results.length > 0 && (
+                    <Button
+                        type="primary"
+                        style={{ backgroundColor: '#52c41a', borderColor: '#52c41a' }}
+                        icon={<PrinterOutlined />}
+                        size="large"
+                        onClick={handleDownloadTranscript}
+                    >
+                        Download Complete Transcript (PDF)
+                    </Button>
+                )}
             </div>
 
             {/* Student Info Card */}

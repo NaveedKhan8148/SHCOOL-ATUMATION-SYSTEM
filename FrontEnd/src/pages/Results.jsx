@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
     Table, Button, Modal, Form, Input, Select, message,
     Tag, Space, Card, Row, Col, Statistic, Popconfirm, Progress, 
-    Tooltip, Badge, Avatar, DatePicker, Tabs, Typography
+    Tooltip, Badge, Avatar, DatePicker, Tabs, Typography, Divider, InputNumber
 } from 'antd';
 import {
     PlusOutlined, PrinterOutlined, EditOutlined,
@@ -10,13 +10,14 @@ import {
     RiseOutlined, FallOutlined, TrophyOutlined, BookOutlined,
     CheckCircleOutlined, CloseCircleOutlined, PercentageOutlined,
     UserOutlined, ClockCircleOutlined, FileTextOutlined,
-    SaveOutlined
+    SaveOutlined, MinusCircleOutlined, SolutionOutlined
 } from '@ant-design/icons';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import axios from 'axios';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
+import { generateStudentTranscriptPDF, calculateGrade } from '../utils/transcriptGenerator';
 
 dayjs.extend(relativeTime);
 
@@ -44,16 +45,6 @@ const GRADE_BG_COLOR = {
     'F':  '#fff2f0',
 };
 
-const calculateGrade = (marks) => {
-    if (marks >= 90) return 'A+';
-    if (marks >= 85) return 'A';
-    if (marks >= 80) return 'B+';
-    if (marks >= 75) return 'B';
-    if (marks >= 70) return 'C+';
-    if (marks >= 60) return 'C';
-    return 'F';
-};
-
 const Results = () => {
     const [results, setResults] = useState([]);
     const [allResults, setAllResults] = useState([]);
@@ -64,13 +55,13 @@ const Results = () => {
     const [selectedSemester, setSelectedSemester] = useState(null);
     const [filterMode, setFilterMode] = useState('student');
     const [isModalVisible, setIsModalVisible] = useState(false);
-    const [isEditModalVisible, setIsEditModalVisible] = useState(false);
-    const [editingResult, setEditingResult] = useState(null);
+    const [isBatchModalVisible, setIsBatchModalVisible] = useState(false);
     const [tableLoading, setTableLoading] = useState(false);
     const [submitLoading, setSubmitLoading] = useState(false);
     const [searchText, setSearchText] = useState('');
+    const [orgName, setOrgName] = useState('SCHOOL AUTOMATION SYSTEM');
     const [form] = Form.useForm();
-    const [editForm] = Form.useForm();
+    const [batchForm] = Form.useForm();
 
     // Helper function to extract error message from any response format
     const extractErrorMessage = (error) => {
@@ -116,6 +107,7 @@ const Results = () => {
     useEffect(() => {
         fetchStudents();
         fetchClasses();
+        fetchOrgName();
     }, []);
 
     useEffect(() => {
@@ -133,6 +125,17 @@ const Results = () => {
     }, [selectedStudent, selectedClass, selectedSemester, filterMode]);
 
     // Fetch helpers
+    const fetchOrgName = async () => {
+        try {
+            const res = await axios.get('/api/v1/organizations/me');
+            const name = res.data.data?.name || res.data.data?.organizationName || '';
+            if (name) setOrgName(name);
+        } catch (err) {
+            // silently fallback to default name
+            console.warn('Could not fetch organization name:', err.message);
+        }
+    };
+
     const fetchStudents = async () => {
         try {
             const res = await axios.get('/api/v1/students/');
@@ -280,56 +283,117 @@ const Results = () => {
         }
     };
 
-    // Filter results based on search text
-    const filteredResults = useMemo(() => {
-        if (!searchText) return results;
-        
-        return results.filter((record) =>
-            (record.studentName || '').toLowerCase().includes(searchText.toLowerCase()) ||
-            (record.subject || '').toLowerCase().includes(searchText.toLowerCase()) ||
-            (record.semester || '').toLowerCase().includes(searchText.toLowerCase()) ||
-            (record.grade || '').toLowerCase().includes(searchText.toLowerCase())
-        );
-    }, [results, searchText]);
+    // Group results by studentId + semester so each student appears in 1 row per semester/term
+    const groupedResults = useMemo(() => {
+        const map = {};
 
-    // Stats calculations based on FILTERED results
-    const totalResults = filteredResults.length;
-    const avgMarks = totalResults > 0
-        ? (filteredResults.reduce((s, r) => s + (r.marks || 0), 0) / totalResults).toFixed(1)
+        results.forEach((r) => {
+            const studentId = r.studentId?._id || r.studentId || r.student_id;
+            const semester = r.semester || 'Current';
+            const key = `${studentId}_${semester}`;
+
+            if (!map[key]) {
+                const sObj = students.find(s => s._id === studentId) || {};
+                let className = r.className;
+                if (!className) {
+                    const classVal = r.classId || sObj.classId;
+                    if (typeof classVal === 'object' && classVal !== null) {
+                        className = classVal.name || '';
+                    } else if (typeof classVal === 'string') {
+                        className = classMap[classVal] || '';
+                    }
+                }
+
+                map[key] = {
+                    key,
+                    studentId,
+                    studentName: r.studentName || sObj.studentName || 'Student',
+                    rollNo: r.rollNo || sObj.rollNo || '-',
+                    fatherName: sObj.fatherName || r.fatherName || '-',
+                    className: className || '-',
+                    classId: r.classId?._id || r.classId || sObj.classId,
+                    semester,
+                    subjects: [],
+                    totalObtained: 0,
+                    totalMax: 0,
+                };
+            }
+
+            const marks = Number(r.marks) || 0;
+            const maxMarks = Number(r.maxMarks) || 100;
+            map[key].subjects.push(r);
+            map[key].totalObtained += marks;
+            map[key].totalMax += maxMarks;
+        });
+
+        return Object.values(map).map((group) => {
+            const overallPct = group.totalMax > 0 ? (group.totalObtained / group.totalMax) * 100 : 0;
+            const overallGrade = calculateGrade(overallPct);
+            const subjectCount = group.subjects.length;
+            const avgMarks = subjectCount > 0 ? (group.totalObtained / subjectCount).toFixed(1) : 0;
+
+            return {
+                ...group,
+                overallPct: Math.round(overallPct * 10) / 10,
+                overallGrade,
+                subjectCount,
+                avgMarks
+            };
+        });
+    }, [results, students, classMap]);
+
+    // Filter grouped results based on search text
+    const filteredGroupedResults = useMemo(() => {
+        if (!searchText) return groupedResults;
+        const term = searchText.toLowerCase();
+
+        return groupedResults.filter((record) =>
+            (record.studentName || '').toLowerCase().includes(term) ||
+            (record.rollNo || '').toLowerCase().includes(term) ||
+            (record.className || '').toLowerCase().includes(term) ||
+            (record.semester || '').toLowerCase().includes(term) ||
+            (record.overallGrade || '').toLowerCase().includes(term)
+        );
+    }, [groupedResults, searchText]);
+
+    // Stats calculations based on FILTERED GROUPED results
+    const totalStudentsCount = filteredGroupedResults.length;
+    const avgMarksOverall = totalStudentsCount > 0
+        ? (filteredGroupedResults.reduce((s, r) => s + (r.overallPct || 0), 0) / totalStudentsCount).toFixed(1)
         : 0;
-    const passCount = filteredResults.filter((r) => r.grade !== 'F').length;
-    const failCount = filteredResults.filter((r) => r.grade === 'F').length;
-    const passRate = totalResults > 0 ? ((passCount / totalResults) * 100).toFixed(1) : 0;
+    const passCount = filteredGroupedResults.filter((r) => r.overallGrade !== 'F').length;
+    const failCount = filteredGroupedResults.filter((r) => r.overallGrade === 'F').length;
+    const passRate = totalStudentsCount > 0 ? ((passCount / totalStudentsCount) * 100).toFixed(1) : 0;
     
-    // Grade distribution based on FILTERED results
+    // Grade distribution based on FILTERED GROUPED results
     const gradeDistribution = {
-        'A+': filteredResults.filter(r => r.grade === 'A+').length,
-        'A': filteredResults.filter(r => r.grade === 'A').length,
-        'B+': filteredResults.filter(r => r.grade === 'B+').length,
-        'B': filteredResults.filter(r => r.grade === 'B').length,
-        'C+': filteredResults.filter(r => r.grade === 'C+').length,
-        'C': filteredResults.filter(r => r.grade === 'C').length,
-        'F': filteredResults.filter(r => r.grade === 'F').length,
+        'A+': filteredGroupedResults.filter(r => r.overallGrade === 'A+').length,
+        'A': filteredGroupedResults.filter(r => r.overallGrade === 'A').length,
+        'B+': filteredGroupedResults.filter(r => r.overallGrade === 'B+').length,
+        'B': filteredGroupedResults.filter(r => r.overallGrade === 'B').length,
+        'C+': filteredGroupedResults.filter(r => r.overallGrade === 'C+').length,
+        'C': filteredGroupedResults.filter(r => r.overallGrade === 'C').length,
+        'F': filteredGroupedResults.filter(r => r.overallGrade === 'F').length,
     };
 
     // Stats Cards Data
     const statsCards = [
         {
-            title: 'Total Records',
-            value: totalResults,
+            title: 'Students Evaluated',
+            value: totalStudentsCount,
             icon: <BookOutlined />,
             color: '#1890ff',
             bgColor: '#e6f7ff',
-            subtitle: searchText ? `From ${results.length} total` : null
+            subtitle: searchText ? `From ${groupedResults.length} total students` : null
         },
         {
-            title: 'Average Marks',
-            value: `${avgMarks}%`,
+            title: 'Overall Average Marks',
+            value: `${avgMarksOverall}%`,
             icon: <RiseOutlined />,
             color: '#52c41a',
             bgColor: '#f6ffed',
             progress: true,
-            progressValue: avgMarks
+            progressValue: avgMarksOverall
         },
         {
             title: 'Pass Rate',
@@ -342,15 +406,81 @@ const Results = () => {
     ];
 
     // Handlers
+    const openBatchModal = () => {
+        batchForm.resetFields();
+        batchForm.setFieldsValue({
+            studentId: selectedStudent || undefined,
+            classId: selectedClass || undefined,
+            semester: selectedSemester || 'Fall-2024',
+            subjects: [
+                { subject: 'Mathematics', marks: 85, maxMarks: 100 },
+                { subject: 'English', marks: 78, maxMarks: 100 },
+                { subject: 'Science', marks: 90, maxMarks: 100 },
+                { subject: 'Computer', marks: 88, maxMarks: 100 },
+                { subject: 'Urdu', marks: 80, maxMarks: 100 }
+            ]
+        });
+        setIsBatchModalVisible(true);
+    };
+
+    const openBatchModalForGroup = (groupRecord) => {
+        batchForm.resetFields();
+        const subjectsList = groupRecord.subjects.map(s => ({
+            subject: s.subject,
+            marks: s.marks,
+            maxMarks: s.maxMarks || 100
+        }));
+
+        batchForm.setFieldsValue({
+            studentId: groupRecord.studentId,
+            classId: groupRecord.classId,
+            semester: groupRecord.semester,
+            subjects: subjectsList.length > 0 ? subjectsList : [
+                { subject: 'Mathematics', marks: 85, maxMarks: 100 }
+            ]
+        });
+        setIsBatchModalVisible(true);
+    };
+
+    const handleBulkCreate = async (values) => {
+        setSubmitLoading(true);
+        try {
+            await axios.post('/api/v1/results/bulk', {
+                studentId: values.studentId,
+                classId: values.classId,
+                semester: values.semester,
+                subjects: values.subjects
+            });
+            message.success('Multiple subject marks saved successfully');
+            setIsBatchModalVisible(false);
+            batchForm.resetFields();
+            if (filterMode === 'student' && selectedStudent) {
+                fetchResultsByStudent(selectedStudent, selectedSemester);
+            } else if (filterMode === 'class' && selectedClass) {
+                fetchResultsByClass(selectedClass, selectedSemester);
+            }
+            fetchAllResults();
+        } catch (err) {
+            const errorMsg = extractErrorMessage(err);
+            message.error(errorMsg);
+        } finally {
+            setSubmitLoading(false);
+        }
+    };
+
     const handleCreate = async (values) => {
         setSubmitLoading(true);
         try {
-            const grade = calculateGrade(Number(values.marks));
+            const numMarks = Number(values.marks);
+            const numMax = Number(values.maxMarks) || 100;
+            const pct = (numMarks / numMax) * 100;
+            const grade = calculateGrade(pct);
             await axios.post('/api/v1/results/', {
                 studentId: values.studentId,
                 classId: values.classId,
                 subject: values.subject,
-                marks: Number(values.marks),
+                marks: numMarks,
+                maxMarks: numMax,
                 grade,
                 semester: values.semester,
             });
@@ -375,6 +505,7 @@ const Results = () => {
         setEditingResult(record);
         editForm.setFieldsValue({
             marks: record.marks,
+            maxMarks: record.maxMarks || 100,
             grade: record.grade,
         });
         setIsEditModalVisible(true);
@@ -383,9 +514,13 @@ const Results = () => {
     const handleEditSave = async (values) => {
         setSubmitLoading(true);
         try {
+            const numMarks = Number(values.marks);
+            const numMax = Number(values.maxMarks) || 100;
+            const pct = (numMarks / numMax) * 100;
             await axios.patch(`/api/v1/results/${editingResult._id}`, {
-                marks: Number(values.marks),
-                grade: values.grade || calculateGrade(Number(values.marks)),
+                marks: numMarks,
+                maxMarks: numMax,
+                grade: values.grade || calculateGrade(pct),
             });
             message.success('Result updated successfully');
             setIsEditModalVisible(false);
@@ -405,10 +540,12 @@ const Results = () => {
         }
     };
 
-    const handleDelete = async (id) => {
+    const handleDeleteGroup = async (groupRecord) => {
         try {
-            await axios.delete(`/api/v1/results/${id}`);
-            message.success('Result deleted successfully');
+            await Promise.all(
+                groupRecord.subjects.map(s => axios.delete(`/api/v1/results/${s._id}`))
+            );
+            message.success('Student result records deleted successfully');
             if (filterMode === 'student' && selectedStudent) {
                 fetchResultsByStudent(selectedStudent, selectedSemester);
             } else if (filterMode === 'class' && selectedClass) {
@@ -421,28 +558,65 @@ const Results = () => {
         }
     };
 
-    const generateReportCard = (record) => {
-        const doc = new jsPDF();
-        doc.setFontSize(20);
-        doc.text('Student Report Card', 105, 20, null, null, 'center');
-        doc.setFontSize(12);
-        doc.text(`Student: ${record.studentName || '-'}`, 20, 40);
-        doc.text(`Roll No: ${record.rollNo || '-'}`, 20, 50);
-        doc.text(`Semester: ${record.semester}`, 20, 60);
-        doc.text(`Class: ${record.className || '-'}`, 20, 70);
-        autoTable(doc, {
-            startY: 80,
-            head: [['Subject', 'Marks', 'Grade']],
-            body: [[record.subject, record.marks, record.grade]],
-        });
-        doc.text(
-            'End of Report',
-            105,
-            doc.lastAutoTable.finalY + 20,
-            null, null, 'center'
-        );
-        doc.save(`${record.studentName}_${record.semester}_ReportCard.pdf`);
-        message.success('Report card downloaded');
+    const handleDownloadTranscript = async (recordOrStudentId, semesterParam = null) => {
+        try {
+            let targetStudentId = null;
+            let targetSemester = semesterParam || selectedSemester || '';
+            let targetStudentObj = null;
+
+            if (typeof recordOrStudentId === 'object' && recordOrStudentId !== null) {
+                targetStudentId = recordOrStudentId.studentId?._id || recordOrStudentId.studentId || recordOrStudentId.student_id;
+                if (recordOrStudentId.semester && !semesterParam) {
+                    targetSemester = recordOrStudentId.semester;
+                }
+            } else {
+                targetStudentId = recordOrStudentId || selectedStudent;
+            }
+
+            if (!targetStudentId) {
+                message.warning('Please select a student to generate transcript');
+                return;
+            }
+
+            targetStudentObj = students.find((s) => s._id === targetStudentId);
+
+            // Fetch latest student results from API if needed
+            const url = targetSemester
+                ? `/api/v1/results/student/${targetStudentId}?semester=${targetSemester}`
+                : `/api/v1/results/student/${targetStudentId}`;
+            const res = await axios.get(url);
+            const studentResults = res.data.data || [];
+
+            if (studentResults.length === 0) {
+                message.warning('No examination records found for this student');
+                return;
+            }
+
+            let className = '';
+            if (targetStudentObj?.classId) {
+                className = typeof targetStudentObj.classId === 'object'
+                    ? targetStudentObj.classId.name
+                    : classMap[targetStudentObj.classId] || '';
+            }
+            if (!className && studentResults[0]?.className) {
+                className = studentResults[0].className;
+            }
+
+            generateStudentTranscriptPDF({
+                studentName: targetStudentObj?.studentName || (typeof recordOrStudentId === 'object' ? recordOrStudentId.studentName : 'Student'),
+                rollNo: targetStudentObj?.rollNo || (typeof recordOrStudentId === 'object' ? recordOrStudentId.rollNo : '-'),
+                fatherName: targetStudentObj?.fatherName || (typeof recordOrStudentId === 'object' ? recordOrStudentId.fatherName : '-'),
+                className: className || '-',
+                semester: targetSemester || studentResults[0]?.semester || 'Academic Term',
+                results: studentResults,
+                schoolName: orgName,
+            });
+
+            message.success('Official Complete Student Transcript downloaded');
+        } catch (err) {
+            console.error('Transcript PDF generation error:', err);
+            message.error(extractErrorMessage(err) || 'Failed to download transcript');
+        }
     };
 
     const clearFilters = () => {
@@ -452,7 +626,7 @@ const Results = () => {
         setSelectedSemester(null);
     };
 
-    // Table columns
+    // Table columns - Subject column removed, aggregated into 1 row per student per semester
     const columns = [
         {
             title: 'Student',
@@ -489,40 +663,45 @@ const Results = () => {
             sorter: (a, b) => (a.className || '').localeCompare(b.className || ''),
         },
         {
-            title: 'Subject',
-            dataIndex: 'subject',
-            key: 'subject',
-            sorter: (a, b) => (a.subject || '').localeCompare(b.subject || ''),
-            render: (subject) => (
-                <Tag icon={<BookOutlined />} color="blue">
-                    {subject}
+            title: 'Subjects Count',
+            dataIndex: 'subjectCount',
+            key: 'subjectCount',
+            render: (count) => (
+                <Tag color="geekblue" icon={<BookOutlined />}>
+                    {count} {count === 1 ? 'Subject' : 'Subjects'}
                 </Tag>
             ),
+            sorter: (a, b) => (a.subjectCount || 0) - (b.subjectCount || 0),
         },
         {
-            title: 'Marks',
-            dataIndex: 'marks',
-            key: 'marks',
-            render: (marks) => (
-                <Tooltip title={`${marks}/100`}>
-                    <Space>
-                        <Progress 
-                            type="circle" 
-                            percent={marks} 
-                            width={40} 
-                            strokeColor={marks >= 60 ? '#52c41a' : '#ff4d4f'}
-                            format={(percent) => `${percent}`}
-                        />
-                        <span style={{ fontWeight: 500 }}>{marks}/100</span>
-                    </Space>
-                </Tooltip>
-            ),
-            sorter: (a, b) => (a.marks || 0) - (b.marks || 0),
+            title: 'Total & Avg Marks',
+            key: 'totalMarks',
+            render: (_, record) => {
+                const pct = record.overallPct || 0;
+                return (
+                    <Tooltip title={`Total: ${record.totalObtained} / ${record.totalMax} | Avg: ${pct}%`}>
+                        <Space>
+                            <Progress 
+                                type="circle" 
+                                percent={pct} 
+                                width={42} 
+                                strokeColor={pct >= 60 ? '#52c41a' : '#ff4d4f'}
+                                format={(p) => `${p}%`}
+                            />
+                            <div>
+                                <div style={{ fontWeight: 600 }}>{record.totalObtained} / {record.totalMax}</div>
+                                <div style={{ fontSize: 11, color: '#52c41a', fontWeight: 500 }}>Avg: {pct}%</div>
+                            </div>
+                        </Space>
+                    </Tooltip>
+                );
+            },
+            sorter: (a, b) => (a.overallPct || 0) - (b.overallPct || 0),
         },
         {
-            title: 'Grade',
-            dataIndex: 'grade',
-            key: 'grade',
+            title: 'Overall Grade',
+            dataIndex: 'overallGrade',
+            key: 'overallGrade',
             render: (grade) => (
                 <Tag 
                     color={GRADE_COLOR[grade] || 'default'}
@@ -540,10 +719,10 @@ const Results = () => {
             filters: Object.keys(GRADE_COLOR).map((g) => ({
                 text: g, value: g,
             })),
-            onFilter: (value, record) => record.grade === value,
+            onFilter: (value, record) => record.overallGrade === value,
         },
         {
-            title: 'Semester',
+            title: 'Semester / Term',
             dataIndex: 'semester',
             key: 'semester',
             sorter: (a, b) => (a.semester || '').localeCompare(b.semester || ''),
@@ -557,32 +736,38 @@ const Results = () => {
         {
             title: 'Action',
             key: 'action',
-            width: 180,
+            width: 240,
             render: (_, record) => (
                 <Space size="small">
-                    <Tooltip title="Edit Result">
+                    <Tooltip title="Edit / Manage Subject Marks">
                         <Button
                             icon={<EditOutlined />}
                             size="small"
-                            onClick={() => handleEditOpen(record)}
-                        />
+                            onClick={() => openBatchModalForGroup(record)}
+                        >
+                            Edit Marks
+                        </Button>
                     </Tooltip>
-                    <Tooltip title="Download Report Card">
+                    <Tooltip title="Download Complete Student Transcript PDF">
                         <Button
+                            type="primary"
+                            ghost
                             icon={<PrinterOutlined />}
                             size="small"
-                            onClick={() => generateReportCard(record)}
-                        />
+                            onClick={() => handleDownloadTranscript(record)}
+                        >
+                            Transcript
+                        </Button>
                     </Tooltip>
                     <Popconfirm
-                        title="Delete this result?"
-                        description="This action cannot be undone."
-                        onConfirm={() => handleDelete(record._id)}
+                        title="Delete student results for this term?"
+                        description="This will delete marks for all subjects of this student in this term."
+                        onConfirm={() => handleDeleteGroup(record)}
                         okText="Yes"
                         cancelText="No"
                         okButtonProps={{ danger: true }}
                     >
-                        <Tooltip title="Delete Result">
+                        <Tooltip title="Delete Student Results">
                             <Button icon={<DeleteOutlined />} size="small" danger />
                         </Tooltip>
                     </Popconfirm>
@@ -590,6 +775,7 @@ const Results = () => {
             ),
         },
     ];
+
 
     return (
         <div>
@@ -599,7 +785,7 @@ const Results = () => {
                     Results & Grading
                 </Title>
                 <Text type="secondary">
-                    Manage student results, track performance, and generate report cards
+                    Manage student results, enter multiple subject marks at once, and download complete official transcripts
                 </Text>
             </div>
 
@@ -669,7 +855,7 @@ const Results = () => {
                                     </Col>
                                 )
                             ))}
-                            {totalResults === 0 && (
+                            {totalStudentsCount === 0 && (
                                 <Col span={24}>
                                     <div style={{ textAlign: 'center', color: '#8c8c8c', padding: '20px 0' }}>
                                         No data available
@@ -801,7 +987,17 @@ const Results = () => {
                     <FileTextOutlined style={{ color: '#1890ff', marginRight: 8 }} />
                     Results Records
                 </h3>
-                <Space>
+                <Space wrap>
+                    {selectedStudent && results.length > 0 && (
+                        <Button
+                            type="primary"
+                            style={{ backgroundColor: '#52c41a', borderColor: '#52c41a' }}
+                            icon={<PrinterOutlined />}
+                            onClick={() => handleDownloadTranscript(selectedStudent, selectedSemester)}
+                        >
+                            Download Student Transcript (PDF)
+                        </Button>
+                    )}
                     <Button
                         icon={<ReloadOutlined />}
                         onClick={() => {
@@ -816,11 +1012,18 @@ const Results = () => {
                         Refresh
                     </Button>
                     <Button
-                        type="primary"
+                        type="default"
                         icon={<PlusOutlined />}
                         onClick={() => setIsModalVisible(true)}
                     >
-                        Enter Marks
+                        Single Subject Marks
+                    </Button>
+                    <Button
+                        type="primary"
+                        icon={<SolutionOutlined />}
+                        onClick={openBatchModal}
+                    >
+                        Enter Multiple Subjects (Batch)
                     </Button>
                 </Space>
             </div>
@@ -836,25 +1039,58 @@ const Results = () => {
             ) : (
                 <Table
                     columns={columns}
-                    dataSource={filteredResults}
-                    rowKey="_id"
+                    dataSource={filteredGroupedResults}
+                    rowKey="key"
                     loading={tableLoading}
                     pagination={{
                         pageSize: 10,
                         showSizeChanger: true,
-                        showTotal: (total) => `Total ${total} results`,
+                        showTotal: (total) => `Total ${total} student records`,
                         pageSizeOptions: ['10', '20', '50', '100'],
                     }}
-                    scroll={{ x: 1300 }}
+                    scroll={{ x: 1000 }}
+                    expandable={{
+                        expandedRowRender: (record) => (
+                            <div style={{ padding: '12px 16px', background: '#fafafa', borderRadius: 8 }}>
+                                <div style={{ fontWeight: 600, marginBottom: 10, color: '#1890ff' }}>
+                                    Subject-wise Breakdown — {record.studentName} | {record.semester}
+                                </div>
+                                <Row gutter={[12, 8]}>
+                                    {record.subjects.map((s, idx) => {
+                                        const pct = s.maxMarks > 0 ? ((s.marks / s.maxMarks) * 100).toFixed(1) : 0;
+                                        const borderColor = s.grade === 'F' ? '#ff4d4f' : (s.grade === 'A+' || s.grade === 'A') ? '#52c41a' : '#1890ff';
+                                        return (
+                                            <Col xs={24} sm={12} md={8} key={s._id || idx}>
+                                                <Card
+                                                    size="small"
+                                                    style={{ borderLeft: `4px solid ${borderColor}` }}
+                                                >
+                                                    <div style={{ fontWeight: 600 }}>{s.subject}</div>
+                                                    <div style={{ color: '#8c8c8c', fontSize: 12 }}>
+                                                        {s.marks} / {s.maxMarks} marks &nbsp;|&nbsp;
+                                                        <span style={{ color: '#1890ff' }}>{pct}%</span>
+                                                    </div>
+                                                    <Tag color={GRADE_COLOR[s.grade] || 'default'} style={{ marginTop: 4 }}>
+                                                        {s.grade}
+                                                    </Tag>
+                                                </Card>
+                                            </Col>
+                                        );
+                                    })}
+                                </Row>
+                            </div>
+                        ),
+                        rowExpandable: (record) => record.subjects && record.subjects.length > 0,
+                    }}
                 />
             )}
 
-            {/* Create Modal */}
+            {/* Create Single Subject Modal */}
             <Modal
                 title={
                     <Space>
                         <PlusOutlined style={{ color: '#1890ff' }} />
-                        <span>Enter Student Marks</span>
+                        <span>Enter Single Subject Marks</span>
                     </Space>
                 }
                 open={isModalVisible}
@@ -866,7 +1102,7 @@ const Results = () => {
                 destroyOnClose
                 width={550}
             >
-                <Form layout="vertical" onFinish={handleCreate} form={form}>
+                <Form layout="vertical" onFinish={handleCreate} form={form} initialValues={{ maxMarks: 100 }}>
                     <Form.Item
                         name="studentId"
                         label="Student"
@@ -908,17 +1144,30 @@ const Results = () => {
                         <Input placeholder="e.g. Mathematics" size="large" />
                     </Form.Item>
 
-                    <Form.Item
-                        name="marks"
-                        label="Marks (0–100)"
-                        rules={[{ required: true, message: 'Please enter marks' }]}
-                    >
-                        <Input type="number" min={0} max={100} size="large" />
-                    </Form.Item>
+                    <Row gutter={16}>
+                        <Col span={12}>
+                            <Form.Item
+                                name="marks"
+                                label="Obtained Marks"
+                                rules={[{ required: true, message: 'Please enter marks' }]}
+                            >
+                                <Input type="number" min={0} size="large" />
+                            </Form.Item>
+                        </Col>
+                        <Col span={12}>
+                            <Form.Item
+                                name="maxMarks"
+                                label="Maximum Marks"
+                                rules={[{ required: true, message: 'Please enter max marks' }]}
+                            >
+                                <Input type="number" min={1} size="large" />
+                            </Form.Item>
+                        </Col>
+                    </Row>
 
                     <Form.Item
                         name="semester"
-                        label="Semester"
+                        label="Semester / Exam Term"
                         rules={[{ required: true, message: 'Please enter semester' }]}
                     >
                         <Input placeholder="e.g. Fall-2024" size="large" />
@@ -939,58 +1188,123 @@ const Results = () => {
                 </Form>
             </Modal>
 
-            {/* Edit Modal */}
+            {/* Batch Entry Modal (Enter Multiple Subjects at Same Time) */}
             <Modal
                 title={
                     <Space>
-                        <EditOutlined style={{ color: '#1890ff' }} />
-                        <span>Update Result</span>
+                        <SolutionOutlined style={{ color: '#1890ff' }} />
+                        <span>Enter Multiple Subject Marks at Once</span>
                     </Space>
                 }
-                open={isEditModalVisible}
+                open={isBatchModalVisible}
                 onCancel={() => {
-                    setIsEditModalVisible(false);
-                    editForm.resetFields();
-                    setEditingResult(null);
+                    setIsBatchModalVisible(false);
+                    batchForm.resetFields();
                 }}
-                footer={null}
+                onOk={() => batchForm.submit()}
+                confirmLoading={submitLoading}
+                okText="Save All Subjects Marks"
+                width={700}
                 destroyOnClose
-                width={500}
             >
-                <Form layout="vertical" onFinish={handleEditSave} form={editForm}>
-                    <Form.Item
-                        name="marks"
-                        label="Marks (0–100)"
-                        rules={[{ required: true, message: 'Please enter marks' }]}
-                    >
-                        <Input type="number" min={0} max={100} size="large" />
-                    </Form.Item>
+                <Form layout="vertical" form={batchForm} onFinish={handleBulkCreate}>
+                    <Row gutter={16}>
+                        <Col span={12}>
+                            <Form.Item
+                                name="studentId"
+                                label="Select Student"
+                                rules={[{ required: true, message: 'Please select student' }]}
+                            >
+                                <Select
+                                    placeholder="Select student"
+                                    showSearch
+                                    optionFilterProp="children"
+                                    onChange={(sId) => {
+                                        const sObj = students.find(s => s._id === sId);
+                                        if (sObj?.classId) {
+                                            const cId = typeof sObj.classId === 'object' ? sObj.classId._id : sObj.classId;
+                                            batchForm.setFieldsValue({ classId: cId });
+                                        }
+                                    }}
+                                >
+                                    {students.map((s) => (
+                                        <Option key={s._id} value={s._id}>
+                                            {s.studentName} — {s.rollNo}
+                                        </Option>
+                                    ))}
+                                </Select>
+                            </Form.Item>
+                        </Col>
+                        <Col span={12}>
+                            <Form.Item
+                                name="classId"
+                                label="Class"
+                                rules={[{ required: true, message: 'Please select class' }]}
+                            >
+                                <Select placeholder="Select class">
+                                    {classes.map((c) => (
+                                        <Option key={c._id} value={c._id}>
+                                            {c.name}
+                                        </Option>
+                                    ))}
+                                </Select>
+                            </Form.Item>
+                        </Col>
+                    </Row>
 
                     <Form.Item
-                        name="grade"
-                        label="Grade (leave blank to auto-calculate)"
+                        name="semester"
+                        label="Exam Term / Semester"
+                        rules={[{ required: true, message: 'Please enter term / semester' }]}
                     >
-                        <Select allowClear placeholder="Auto-calculate from marks" size="large">
-                            {Object.keys(GRADE_COLOR).map((g) => (
-                                <Option key={g} value={g}>{g}</Option>
-                            ))}
-                        </Select>
+                        <Input placeholder="e.g. Mid-Term 2024 / Fall-2024 / Annual 2025" />
                     </Form.Item>
 
-                    <Form.Item>
-                        <Button
-                            type="primary"
-                            htmlType="submit"
-                            block
-                            loading={submitLoading}
-                            size="large"
-                            icon={<CheckCircleOutlined />}
-                        >
-                            Update Result
-                        </Button>
-                    </Form.Item>
+                    <Divider style={{ margin: '12px 0' }}>Subject Marks List</Divider>
+
+                    <Form.List name="subjects">
+                        {(fields, { add, remove }) => (
+                            <>
+                                {fields.map(({ key, name, ...restField }) => (
+                                    <Space key={key} style={{ display: 'flex', marginBottom: 8 }} align="baseline">
+                                        <Form.Item
+                                            {...restField}
+                                            name={[name, 'subject']}
+                                            rules={[{ required: true, message: 'Subject name' }]}
+                                            style={{ marginBottom: 0, width: 250 }}
+                                        >
+                                            <Input placeholder="Subject Name (e.g. Physics)" />
+                                        </Form.Item>
+                                        <Form.Item
+                                            {...restField}
+                                            name={[name, 'marks']}
+                                            rules={[{ required: true, message: 'Marks' }]}
+                                            style={{ marginBottom: 0, width: 140 }}
+                                        >
+                                            <Input placeholder="Obtained" type="number" min={0} />
+                                        </Form.Item>
+                                        <Form.Item
+                                            {...restField}
+                                            name={[name, 'maxMarks']}
+                                            rules={[{ required: true, message: 'Max' }]}
+                                            style={{ marginBottom: 0, width: 140 }}
+                                        >
+                                            <Input placeholder="Total Max" type="number" min={1} />
+                                        </Form.Item>
+                                        <MinusCircleOutlined onClick={() => remove(name)} style={{ color: 'red', fontSize: 16, cursor: 'pointer' }} />
+                                    </Space>
+                                ))}
+                                <Form.Item style={{ marginTop: 12 }}>
+                                    <Button type="dashed" onClick={() => add({ subject: '', marks: 0, maxMarks: 100 })} block icon={<PlusOutlined />}>
+                                        Add Subject Row
+                                    </Button>
+                                </Form.Item>
+                            </>
+                        )}
+                    </Form.List>
                 </Form>
             </Modal>
+
         </div>
     );
 };
