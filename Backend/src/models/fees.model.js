@@ -10,6 +10,16 @@ const concessionSchema = new Schema({
     amount: { type: Number, required: true, min: 0 }
 }, { _id: false });
 
+const paymentHistorySchema = new Schema({
+    amount: { type: Number, required: true },
+    tuitionAmount: { type: Number, default: 0 },
+    transportAmount: { type: Number, default: 0 },
+    date: { type: Date, default: Date.now },
+    feeType: { type: String, enum: ["ACADEMIC", "TRANSPORT", "BOTH"], default: "BOTH" },
+    paymentMethod: { type: String, default: "CASH" },
+    remarks: { type: String, default: "" }
+});
+
 const feesSchema = new Schema(
     {
         organizationId: {
@@ -66,6 +76,15 @@ const feesSchema = new Schema(
             type: Number,
             default: 0,
         },
+        academicPaid: {
+            type: Number,
+            default: 0,
+        },
+        transportPaid: {
+            type: Number,
+            default: 0,
+        },
+        paymentHistory: [paymentHistorySchema],
         paidDate: {
             type: Date,
             default: null,

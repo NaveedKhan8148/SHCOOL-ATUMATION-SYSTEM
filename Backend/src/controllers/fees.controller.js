@@ -123,27 +123,121 @@ const getPendingFees = asyncHandler(async (req, res) => {
 
 // PATCH /api/v1/fees/:id/pay
 const markFeePaid = asyncHandler(async (req, res) => {
-    const { paidAmount, paymentMethod, remarks } = req.body;
+    // Support both new split-payment (tuitionAmount + transportAmount)
+    // and legacy single-amount (paidAmount + feeType) formats
+    const { tuitionAmount, transportAmount, paidAmount, paymentMethod, remarks, feeType } = req.body;
 
     const feeRecord = await Fees.findOne({ _id: req.params.id, organizationId: req.user.organizationId });
     if (!feeRecord) throw new ApiError(404, "Fee record not found");
 
-    const amountPaying = Number(paidAmount) || feeRecord.netPayable;
-    feeRecord.paidAmount = amountPaying;
+    // Calculate expected totals from feeHeads
+    let expectedTransport = 0;
+    let expectedAcademic = 0;
+    feeRecord.feeHeads.forEach(head => {
+        if (head.headName.toLowerCase().includes('transport')) {
+            expectedTransport += head.amount;
+        } else {
+            expectedAcademic += head.amount;
+        }
+    });
+    expectedAcademic = Math.max(0, expectedAcademic - feeRecord.totalConcession);
+
+    const remainingTransport = Math.max(0, expectedTransport - (feeRecord.transportPaid || 0));
+    const remainingAcademic = Math.max(0, expectedAcademic - (feeRecord.academicPaid || 0));
+    const remainingTotal = Math.max(0, feeRecord.netPayable - (feeRecord.paidAmount || 0));
+
+    let tuitionPaying = 0;
+    let transportPaying = 0;
+    let amountPaying = 0;
+    let historyFeeType = "BOTH";
+
+    // --- NEW: explicit split-payment mode ---
+    if (tuitionAmount !== undefined || transportAmount !== undefined) {
+        tuitionPaying = Number(tuitionAmount) || 0;
+        transportPaying = Number(transportAmount) || 0;
+        amountPaying = tuitionPaying + transportPaying;
+
+        if (amountPaying <= 0) throw new ApiError(400, "Total payment amount must be greater than zero");
+        if (tuitionPaying < 0) throw new ApiError(400, "Tuition payment cannot be negative");
+        if (transportPaying < 0) throw new ApiError(400, "Transport payment cannot be negative");
+
+        if (tuitionPaying > remainingAcademic) {
+            throw new ApiError(400, `Tuition payment (${tuitionPaying}) cannot exceed remaining tuition fee of ${remainingAcademic}`);
+        }
+        if (transportPaying > remainingTransport) {
+            throw new ApiError(400, `Transport payment (${transportPaying}) cannot exceed remaining transport fee of ${remainingTransport}`);
+        }
+        if (amountPaying > remainingTotal) {
+            throw new ApiError(400, `Total payment (${amountPaying}) cannot exceed remaining balance of ${remainingTotal}`);
+        }
+
+        feeRecord.academicPaid = (feeRecord.academicPaid || 0) + tuitionPaying;
+        feeRecord.transportPaid = (feeRecord.transportPaid || 0) + transportPaying;
+
+        // Determine label for history entry
+        if (tuitionPaying > 0 && transportPaying > 0) historyFeeType = "BOTH";
+        else if (tuitionPaying > 0) historyFeeType = "ACADEMIC";
+        else historyFeeType = "TRANSPORT";
+
+    // --- LEGACY: single amount + feeType mode (backward compatible) ---
+    } else {
+        amountPaying = Number(paidAmount);
+        if (!amountPaying || amountPaying <= 0) throw new ApiError(400, "Invalid payment amount");
+        if (amountPaying > remainingTotal) {
+            throw new ApiError(400, `Payment amount cannot exceed remaining balance of ${remainingTotal}`);
+        }
+
+        const type = feeType || "BOTH";
+        historyFeeType = type;
+
+        if (type === "TRANSPORT") {
+            if (amountPaying > remainingTransport) throw new ApiError(400, `Amount exceeds remaining transport fee of ${remainingTransport}`);
+            transportPaying = amountPaying;
+            feeRecord.transportPaid = (feeRecord.transportPaid || 0) + amountPaying;
+        } else if (type === "ACADEMIC") {
+            if (amountPaying > remainingAcademic) throw new ApiError(400, `Amount exceeds remaining academic fee of ${remainingAcademic}`);
+            tuitionPaying = amountPaying;
+            feeRecord.academicPaid = (feeRecord.academicPaid || 0) + amountPaying;
+        } else {
+            // BOTH: auto-distribute
+            let remainingToApply = amountPaying;
+            transportPaying = Math.min(remainingToApply, remainingTransport);
+            feeRecord.transportPaid = (feeRecord.transportPaid || 0) + transportPaying;
+            remainingToApply -= transportPaying;
+            tuitionPaying = Math.min(remainingToApply, remainingAcademic);
+            feeRecord.academicPaid = (feeRecord.academicPaid || 0) + tuitionPaying;
+        }
+    }
+
+    feeRecord.paidAmount = (feeRecord.paidAmount || 0) + amountPaying;
     feeRecord.paidDate = new Date();
     feeRecord.paymentMethod = paymentMethod || "CASH";
     feeRecord.receivedBy = req.user.email || req.user.role;
     if (remarks) feeRecord.remarks = remarks;
 
-    if (amountPaying >= feeRecord.netPayable) {
+    if (!feeRecord.paymentHistory) {
+        feeRecord.paymentHistory = [];
+    }
+
+    feeRecord.paymentHistory.push({
+        amount: amountPaying,
+        tuitionAmount: tuitionPaying,
+        transportAmount: transportPaying,
+        date: new Date(),
+        feeType: historyFeeType,
+        paymentMethod: paymentMethod || "CASH",
+        remarks: remarks || ""
+    });
+
+    if (feeRecord.paidAmount >= feeRecord.netPayable) {
         feeRecord.status = "PAID";
-    } else if (amountPaying > 0) {
+    } else if (feeRecord.paidAmount > 0) {
         feeRecord.status = "PARTIAL";
     }
 
     await feeRecord.save();
 
-    return res.status(200).json(new ApiResponse(200, feeRecord, `Fee marked as ${feeRecord.status}`));
+    return res.status(200).json(new ApiResponse(200, feeRecord, `Payment recorded successfully`));
 });
 
 // DELETE /api/v1/fees/:id
