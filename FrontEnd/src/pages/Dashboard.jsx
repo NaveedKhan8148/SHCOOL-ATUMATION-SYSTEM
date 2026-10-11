@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Col, Row, Typography, Spin, Statistic, Button, Space, Tooltip, Badge, Modal, Form, Input, Select, message } from 'antd';
+import { Card, Col, Row, Typography, Spin, Statistic, Button, Space, Tooltip, Badge, Modal, Form, Input, Select, message, Tag, Alert } from 'antd';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
     Legend, ResponsiveContainer, LineChart, Line,
@@ -10,9 +10,14 @@ import {
     DollarOutlined, WarningOutlined, UserOutlined,
     RiseOutlined, FallOutlined, TrophyOutlined,
     CheckCircleOutlined, CloseCircleOutlined,
-    PlusOutlined, MailOutlined, LockOutlined, SaveOutlined
+    PlusOutlined, MailOutlined, LockOutlined, SaveOutlined,
+    BankOutlined, EditOutlined, PrinterOutlined
 } from '@ant-design/icons';
 import axios from 'axios';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { useAuth } from '../context/AuthContext';
+import { useOrganization } from '../context/OrganizationContext';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -126,6 +131,87 @@ const Dashboard = () => {
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [submitLoading, setSubmitLoading] = useState(false);
     const [form] = Form.useForm();
+
+    // Organization settings state
+    const { user } = useAuth();
+    const { organizationName, isConfigured, updateOrganizationName } = useOrganization();
+    const [isEditingOrg, setIsEditingOrg] = useState(false);
+    const [orgInputName, setOrgInputName] = useState('');
+    const [savingOrg, setSavingOrg] = useState(false);
+
+    useEffect(() => {
+        if (organizationName) {
+            setOrgInputName(organizationName);
+        }
+    }, [organizationName]);
+
+    const handleSaveOrgName = async () => {
+        const trimmed = (orgInputName || '').trim();
+        if (!trimmed) {
+            message.error('Organization name is required and cannot be empty.');
+            return;
+        }
+        if (trimmed.length > 150) {
+            message.error('Organization name cannot exceed 150 characters.');
+            return;
+        }
+        setSavingOrg(true);
+        const res = await updateOrganizationName(trimmed);
+        setSavingOrg(false);
+        if (res.ok) {
+            setIsEditingOrg(false);
+        }
+    };
+
+    const exportAnalyticsPDF = () => {
+        const doc = new jsPDF();
+        const titleSchool = (organizationName && organizationName.trim()) 
+            ? organizationName.trim().toUpperCase() 
+            : 'SCHOOL AUTOMATION SYSTEM';
+
+        // Header Banner
+        doc.setFillColor(30, 58, 138);
+        doc.rect(0, 0, 210, 32, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(16);
+        doc.setTextColor(255, 255, 255);
+        doc.text(titleSchool, 105, 14, { align: 'center' });
+        doc.setFontSize(9.5);
+        doc.setFont('helvetica', 'normal');
+        doc.text('ACADEMIC ANALYTICS & INSTITUTIONAL SUMMARY REPORT', 105, 23, { align: 'center' });
+
+        // Meta Info
+        doc.setTextColor(50, 50, 50);
+        doc.setFontSize(9.5);
+        doc.text(`Generated Date: ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`, 14, 42);
+        doc.text(`Scope: Active Institutional Analytics`, 140, 42);
+
+        // Metrics Table
+        const summaryRows = [
+            ['Total Registered Students', `${totalStudents.toLocaleString()} students`],
+            ['Faculty & Teaching Staff', `${totalTeachers.toLocaleString()} teachers`],
+            ['Academic Classes', `${totalClasses.toLocaleString()} classes`],
+            ['Academic Warning Notices', `${totalWarnings.toLocaleString()} warnings issued`]
+        ];
+
+        autoTable(doc, {
+            startY: 48,
+            head: [['Institutional Indicator', 'Current Value']],
+            body: summaryRows,
+            theme: 'grid',
+            headStyles: { fillColor: [30, 58, 138], textColor: [255, 255, 255], fontStyle: 'bold' },
+            columnStyles: { 0: { cellWidth: 125 }, 1: { cellWidth: 57, halign: 'right' } },
+            margin: { left: 14, right: 14 }
+        });
+
+        doc.setFontSize(8.5);
+        doc.setFont('helvetica', 'italic');
+        doc.setTextColor(120, 120, 120);
+        doc.text(`Official report issued by ${titleSchool}. All data synchronized from institutional database.`, 105, doc.lastAutoTable.finalY + 16, { align: 'center' });
+
+        doc.save(`Academic_Analytics_${(organizationName || 'School').replace(/\s+/g, '_')}.pdf`);
+        message.success('Academic Analytics Report downloaded successfully!');
+    };
 
     useEffect(() => {
         fetchAll();
@@ -302,6 +388,13 @@ const Dashboard = () => {
                 </div>
                 <Space>
                     <Button 
+                        icon={<PrinterOutlined />} 
+                        onClick={exportAnalyticsPDF}
+                        size="large"
+                    >
+                        Download Analytics Report (PDF)
+                    </Button>
+                    <Button 
                         type="primary" 
                         icon={<PlusOutlined />} 
                         onClick={() => setIsModalVisible(true)}
@@ -320,6 +413,162 @@ const Dashboard = () => {
                     </Button>
                 </Space>
             </div>
+
+            {/* Organization Settings Section */}
+            <Card
+                style={{
+                    marginBottom: 24,
+                    borderRadius: '12px',
+                    border: isConfigured ? '1px solid #e2e8f0' : '1.5px solid #1890ff',
+                    boxShadow: '0 2px 10px rgba(0,0,0,0.03)',
+                    background: isConfigured ? '#ffffff' : '#f0f7ff'
+                }}
+            >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: (isEditingOrg || !isConfigured) ? 16 : 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <div style={{
+                            width: 44,
+                            height: 44,
+                            borderRadius: '10px',
+                            background: isConfigured ? '#e6f7ff' : '#fff7e6',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: isConfigured ? '#1890ff' : '#fa8c16',
+                            fontSize: 22
+                        }}>
+                            <BankOutlined />
+                        </div>
+                        <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <Title level={4} style={{ margin: 0, fontWeight: 600 }}>
+                                    Organization Settings
+                                </Title>
+                                {isConfigured ? (
+                                    <Tag color="success" style={{ borderRadius: 12, padding: '2px 10px' }}>
+                                        <CheckCircleOutlined /> Active & Saved
+                                    </Tag>
+                                ) : (
+                                    <Tag color="warning" style={{ borderRadius: 12, padding: '2px 10px' }}>
+                                        Setup Required
+                                    </Tag>
+                                )}
+                            </div>
+                            <Text type="secondary" style={{ fontSize: 13 }}>
+                                Official school / organization name displayed on all printable vouchers, receipts, and academic reports.
+                            </Text>
+                        </div>
+                    </div>
+
+                    {isConfigured && !isEditingOrg && (user?.role === 'ADMIN' || user?.role === 'SUPERADMIN') && (
+                        <Button
+                            icon={<EditOutlined />}
+                            onClick={() => {
+                                setIsEditingOrg(true);
+                                setOrgInputName(organizationName);
+                            }}
+                        >
+                            Edit Organization Name
+                        </Button>
+                    )}
+                </div>
+
+                {/* Initial Setup (First time: empty input field + Save button) */}
+                {!isConfigured && (
+                    <div style={{ marginTop: 8, padding: '16px', background: '#ffffff', borderRadius: '8px', border: '1px solid #d9d9d9' }}>
+                        <Text strong style={{ display: 'block', marginBottom: 8, fontSize: 14 }}>
+                            Organization Name <Text type="danger">*</Text>
+                        </Text>
+                        {(user?.role === 'ADMIN' || user?.role === 'SUPERADMIN') ? (
+                            <>
+                                <Space.Compact style={{ width: '100%', maxWidth: 600 }}>
+                                    <Input
+                                        size="large"
+                                        prefix={<BankOutlined style={{ color: '#bfbfbf' }} />}
+                                        placeholder="Enter organization name (e.g. Zaid Public School)"
+                                        value={orgInputName}
+                                        onChange={(e) => setOrgInputName(e.target.value)}
+                                        onPressEnter={handleSaveOrgName}
+                                        maxLength={150}
+                                    />
+                                    <Button
+                                        type="primary"
+                                        size="large"
+                                        icon={<SaveOutlined />}
+                                        loading={savingOrg}
+                                        onClick={handleSaveOrgName}
+                                    >
+                                        Save Organization Name
+                                    </Button>
+                                </Space.Compact>
+                                <Text type="secondary" style={{ display: 'block', marginTop: 8, fontSize: 12 }}>
+                                    Once saved, this name becomes the permanent header across all vouchers, receipts, and transcripts.
+                                </Text>
+                            </>
+                        ) : (
+                            <Text type="secondary">
+                                Organization name has not been configured yet. Please contact an administrator to set the school name.
+                            </Text>
+                        )}
+                    </div>
+                )}
+
+                {/* Display Saved Name (Configured) */}
+                {isConfigured && !isEditingOrg && (
+                    <div style={{ marginTop: 12, padding: '12px 16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                        <div>
+                            <Text type="secondary" style={{ fontSize: 12, display: 'block', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Current Saved Organization Name</Text>
+                            <Text strong style={{ fontSize: 18, color: '#0f172a' }}>
+                                {organizationName}
+                            </Text>
+                        </div>
+                        <Text type="secondary" style={{ fontSize: 13, fontStyle: 'italic' }}>
+                            Applied across all printable vouchers, receipts, and transcripts
+                        </Text>
+                    </div>
+                )}
+
+                {/* Edit Mode */}
+                {isConfigured && isEditingOrg && (
+                    <div style={{ marginTop: 8, padding: '16px', background: '#ffffff', borderRadius: '8px', border: '1px solid #d9d9d9' }}>
+                        <Text strong style={{ display: 'block', marginBottom: 8, fontSize: 14 }}>
+                            Update Organization Name <Text type="danger">*</Text>
+                        </Text>
+                        <Space.Compact style={{ width: '100%', maxWidth: 650 }}>
+                            <Input
+                                size="large"
+                                prefix={<BankOutlined style={{ color: '#bfbfbf' }} />}
+                                placeholder="Enter organization name"
+                                value={orgInputName}
+                                onChange={(e) => setOrgInputName(e.target.value)}
+                                onPressEnter={handleSaveOrgName}
+                                maxLength={150}
+                            />
+                            <Button
+                                type="primary"
+                                size="large"
+                                icon={<SaveOutlined />}
+                                loading={savingOrg}
+                                onClick={handleSaveOrgName}
+                            >
+                                Save Changes
+                            </Button>
+                            <Button
+                                size="large"
+                                onClick={() => {
+                                    setIsEditingOrg(false);
+                                    setOrgInputName(organizationName);
+                                }}
+                            >
+                                Cancel
+                            </Button>
+                        </Space.Compact>
+                        <Text type="secondary" style={{ display: 'block', marginTop: 8, fontSize: 12 }}>
+                            Updating replaces the existing name without duplicate records and instantly updates all new prints and PDFs.
+                        </Text>
+                    </div>
+                )}
+            </Card>
 
             {/* Summary Stats Cards */}
             <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>

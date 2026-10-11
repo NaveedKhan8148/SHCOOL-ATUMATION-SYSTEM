@@ -17,6 +17,7 @@ import axios from 'axios';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import { useAuth } from '../context/AuthContext';
+import { useOrganization } from '../context/OrganizationContext';
 
 dayjs.extend(relativeTime);
 
@@ -25,6 +26,7 @@ const { Option } = Select;
 
 const StudentFees = () => {
     const { profile, loading: authLoading } = useAuth();
+    const { organizationName } = useOrganization();
     const [fees, setFees] = useState([]);
     const [loadingFees, setLoadingFees] = useState(false);
     const [searchText, setSearchText] = useState('');
@@ -182,32 +184,109 @@ const StudentFees = () => {
         }
     ];
 
-    // PDF receipt
+    // PDF receipt generator
     const generateReceipt = (record) => {
         const doc = new jsPDF();
-        doc.setFontSize(20);
-        doc.text('Fee Receipt', 105, 20, null, null, 'center');
-        doc.setFontSize(12);
-        doc.text(`Student: ${profile?.studentName || '-'}`, 20, 40);
-        doc.text(`Roll No: ${profile?.rollNo || '-'}`, 20, 50);
-        doc.text(`Fee Type: ${record.feeType}`, 20, 60);
-        doc.text(`Amount: Rs ${Number(record.amount).toLocaleString()}`, 20, 70);
-        doc.text(
-            `Paid Date: ${record.paidDate ? dayjs(record.paidDate).format('YYYY-MM-DD') : '-'}`,
-            20, 80
-        );
+        
+        let tuitionTotal = 0;
+        let transportTotal = 0;
+        if (record.feeHeads && record.feeHeads.length > 0) {
+            record.feeHeads.forEach(h => {
+                const name = (h.headName || '').toLowerCase();
+                const amt = Number(h.amount) || 0;
+                if (name.includes('transport')) transportTotal += amt;
+                else tuitionTotal += amt;
+            });
+        } else {
+            tuitionTotal = Number(record.netPayable || record.amount || 0);
+        }
+
+        const concession = Number(record.totalConcession || 0);
+        tuitionTotal = Math.max(0, tuitionTotal - concession);
+        const totalFee = Number(record.netPayable || record.amount || (tuitionTotal + transportTotal));
+        const paidAmount = Number(record.paidAmount !== undefined ? record.paidAmount : (record.status === 'Paid' ? totalFee : 0));
+        const remainingAmount = Math.max(0, totalFee - paidAmount);
+
+        const schoolTitle = (organizationName && organizationName.trim()) 
+            ? organizationName.trim().toUpperCase() 
+            : (typeof window !== 'undefined' && localStorage.getItem('organizationName') ? localStorage.getItem('organizationName').trim().toUpperCase() : 'SCHOOL AUTOMATION SYSTEM');
+
+        // Header band
+        doc.setFillColor(24, 144, 255);
+        doc.rect(0, 0, 210, 30, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(16);
+        doc.setTextColor(255, 255, 255);
+        doc.text(schoolTitle, 105, 13, { align: 'center' });
+        doc.setFontSize(10.5);
+        doc.text('OFFICIAL STUDENT FEE RECEIPT', 105, 21, { align: 'center' });
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`${schoolTitle} - STUDENT PAYMENT RECORD`, 105, 27, { align: 'center' });
+
+        // Meta details
+        doc.setTextColor(40, 40, 40);
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`Receipt ID: ${record.voucherNo || record._id}`, 14, 38);
+        doc.text(`Fee Month: ${record.feeMonth || dayjs(record.dueDate).format('MMMM YYYY')}`, 14, 45);
+        doc.text(`Date: ${record.paidDate ? dayjs(record.paidDate).format('DD MMM YYYY') : dayjs().format('DD MMM YYYY')}`, 140, 38);
+        doc.text(`Status: ${record.status}`, 140, 45);
+
+        // Student Info
+        doc.setFillColor(248, 249, 250);
+        doc.setDrawColor(220, 220, 220);
+        doc.roundedRect(14, 52, 182, 22, 2, 2, 'FD');
+        doc.setFont('helvetica', 'bold');
+        doc.text(`Student: ${profile?.studentName || '-'}`, 18, 60);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`Roll No: ${profile?.rollNo || '-'}`, 18, 67);
+        doc.text(`Class: ${profile?.classId?.name || '-'}`, 100, 67);
+
+        // Summary Table
+        const summaryRows = [
+            ['Tuition Fee', `Rs ${tuitionTotal.toLocaleString()}`],
+            ['Transport Fee', `Rs ${transportTotal.toLocaleString()}`],
+            [{ content: 'Total Fee', styles: { fontStyle: 'bold' } }, { content: `Rs ${totalFee.toLocaleString()}`, styles: { fontStyle: 'bold', halign: 'right' } }],
+            ['Previously Paid', `Rs ${paidAmount.toLocaleString()}`],
+            [
+                { 
+                    content: remainingAmount === 0 ? 'Remaining Amount' : 'Remaining Balance', 
+                    styles: { 
+                        fontStyle: 'bold', 
+                        textColor: remainingAmount === 0 ? [38, 154, 76] : [200, 30, 30],
+                        fillColor: remainingAmount === 0 ? [240, 250, 240] : [255, 242, 235]
+                    } 
+                }, 
+                { 
+                    content: remainingAmount === 0 ? 'Rs 0 (PAID IN FULL)' : `Rs ${remainingAmount.toLocaleString()}`, 
+                    styles: { 
+                        fontStyle: 'bold', 
+                        halign: 'right',
+                        textColor: remainingAmount === 0 ? [38, 154, 76] : [200, 30, 30],
+                        fillColor: remainingAmount === 0 ? [240, 250, 240] : [255, 242, 235]
+                    } 
+                }
+            ]
+        ];
+
         autoTable(doc, {
-            startY: 90,
-            head: [['Fee Type', 'Amount', 'Status']],
-            body: [[record.feeType, `Rs ${Number(record.amount).toLocaleString()}`, record.status]],
+            startY: 80,
+            head: [['Fee Particulars', 'Amount (PKR)']],
+            body: summaryRows,
+            theme: 'grid',
+            headStyles: { fillColor: [24, 144, 255], textColor: [255, 255, 255], fontStyle: 'bold' },
+            columnStyles: { 0: { cellWidth: 125 }, 1: { cellWidth: 57, halign: 'right' } },
+            margin: { left: 14, right: 14 }
         });
-        doc.text(
-            'Thank you for your payment!',
-            105, doc.lastAutoTable.finalY + 20,
-            null, null, 'center'
-        );
-        doc.save(`Receipt_${record._id}.pdf`);
-        message.success('Receipt downloaded');
+
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'italic');
+        doc.setTextColor(120, 120, 120);
+        doc.text('Thank you for your payment! This is an official system generated receipt.', 105, doc.lastAutoTable.finalY + 15, { align: 'center' });
+
+        doc.save(`Receipt_${record.voucherNo || record._id}.pdf`);
+        message.success('Receipt downloaded successfully');
     };
 
     // Table columns

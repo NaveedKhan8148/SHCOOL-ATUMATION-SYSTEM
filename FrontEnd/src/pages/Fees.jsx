@@ -16,11 +16,13 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import axios from 'axios';
 import dayjs from 'dayjs';
+import { useOrganization } from '../context/OrganizationContext';
 
 const { Option } = Select;
 const { Title, Text, Paragraph } = Typography;
 
 const Fees = () => {
+    const { organizationName } = useOrganization();
     const [students, setStudents] = useState([]);
     const [classes, setClasses] = useState([]);
     const [sessions, setSessions] = useState([]);
@@ -185,119 +187,364 @@ const Fees = () => {
     const grandTotalFee = useMemo(() => totalTuitionFee + totalTransportFee, [totalTuitionFee, totalTransportFee]);
     const grandTotalRemaining = useMemo(() => remainingTuitionFee + remainingTransportFee, [remainingTuitionFee, remainingTransportFee]);
 
-    // Official Printable Fee Voucher PDF Generator
-    const generateVoucherPDF = (record) => {
-        const doc = new jsPDF();
-        const student = record.studentId || {};
-        const className = student.classId?.name ? `${student.classId.name} (${student.classId.section || 'A'})` : '-';
+    // Official Printable Fee Voucher & Receipt PDF Generator
+    const generateVoucherPDF = (record, options = {}) => {
+        if (!record) return;
 
-        // Primary Header Band
+        const doc = new jsPDF();
+        const student = (record.studentId && typeof record.studentId === 'object' && record.studentId.studentName)
+            ? record.studentId
+            : (selectedStudentForHistory?.student || record.studentId || {});
+
+        const className = student.classId?.name
+            ? `${student.classId.name}${student.classId.section ? ` (${student.classId.section})` : ''}`
+            : (student.className || '-');
+
+        // Extract Fee Heads
+        let rawTuitionTotal = 0;
+        let rawTransportTotal = 0;
+        const feeHeadsList = record.feeHeads && record.feeHeads.length > 0 ? record.feeHeads : [];
+
+        if (feeHeadsList.length > 0) {
+            feeHeadsList.forEach(h => {
+                const name = (h.headName || '').toLowerCase();
+                const amt = Number(h.amount) || 0;
+                if (name.includes('transport')) {
+                    rawTransportTotal += amt;
+                } else {
+                    rawTuitionTotal += amt;
+                }
+            });
+        } else {
+            rawTuitionTotal = Number(record.subTotal || record.netPayable || 0);
+        }
+
+        const concession = Number(record.totalConcession || 0);
+        const tuitionFee = Math.max(0, rawTuitionTotal - concession);
+        const transportFee = rawTransportTotal;
+        const subTotal = Number(record.subTotal || (rawTuitionTotal + rawTransportTotal));
+        const totalFee = Number(record.netPayable !== undefined ? record.netPayable : (subTotal - concession));
+        const totalPaid = Number(record.paidAmount || 0);
+        const remainingAmount = Math.max(0, totalFee - totalPaid);
+
+        const tuitionPaid = Number(record.academicPaid || 0);
+        const transportPaid = Number(record.transportPaid || 0);
+
+        // Determine Document Type & Transaction Mode
+        const isReceipt = options.isReceipt || (options.currentPayment !== undefined) || record.status === 'PAID';
+        const currentPayment = options.currentPayment || null;
+
+        let currentPaymentAmount = 0;
+        let previouslyPaid = totalPaid;
+
+        if (currentPayment) {
+            currentPaymentAmount = Number(currentPayment.amount) || 0;
+            // Previously paid is total paid before this current transaction
+            previouslyPaid = Math.max(0, totalPaid - currentPaymentAmount);
+        }
+
+        const schoolTitle = (organizationName && organizationName.trim()) 
+            ? organizationName.trim().toUpperCase() 
+            : (typeof window !== 'undefined' && localStorage.getItem('organizationName') ? localStorage.getItem('organizationName').trim().toUpperCase() : 'SCHOOL AUTOMATION SYSTEM');
+
+        let docTitle = 'OFFICIAL STUDENT FEE VOUCHER';
+        let docSubtitle = `${schoolTitle} - OFFICIAL FEE VOUCHER & STATEMENT`;
+        if (isReceipt && remainingAmount === 0) {
+            docTitle = 'OFFICIAL STUDENT FEE PAYMENT RECEIPT';
+            docSubtitle = `${schoolTitle} - OFFICIAL PAYMENT RECEIPT`;
+        } else if (isReceipt || (record.status === 'PARTIAL' && totalPaid > 0)) {
+            docTitle = 'OFFICIAL STUDENT FEE VOUCHER & RECEIPT';
+            docSubtitle = `${schoolTitle} - PAYMENT RECEIPT & REMAINING DUES STATEMENT`;
+        }
+
+        // Primary Header Band (0 to 32 mm)
         doc.setFillColor(24, 144, 255);
         doc.rect(0, 0, 210, 32, 'F');
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(18);
+        doc.setFontSize(16);
         doc.setTextColor(255, 255, 255);
-        doc.text('OFFICIAL STUDENT FEE VOUCHER', 105, 16, { align: 'center' });
+        doc.text(schoolTitle, 105, 13, { align: 'center' });
 
-        doc.setFontSize(10);
-        doc.setFont('helvetica', 'normal');
-        doc.text('SCHOOL AUTOMATION SYSTEM - OFFICIAL PAYMENT VOUCHER & RECEIPT', 105, 24, { align: 'center' });
-
-        // Voucher Summary Meta
-        doc.setTextColor(40, 40, 40);
-        doc.setFontSize(11);
+        doc.setFontSize(10.5);
         doc.setFont('helvetica', 'bold');
-        doc.text(`Voucher No: ${record.voucherNo || record._id}`, 14, 44);
-        doc.text(`Fee Month: ${record.feeMonth || 'Current Month'}`, 14, 52);
-        doc.text(`Issue Date: ${dayjs(record.createdAt).format('DD MMM YYYY')}`, 130, 44);
-        doc.text(`Due Date: ${dayjs(record.dueDate).format('DD MMM YYYY')}`, 130, 52);
+        doc.text(docTitle, 105, 21, { align: 'center' });
 
-        // Status Badge Box
-        const statusText = record.status || 'PENDING';
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'normal');
+        doc.text(docSubtitle, 105, 28, { align: 'center' });
+
+        // Voucher Meta Information (y: 38 to 50)
+        doc.setTextColor(50, 50, 50);
+        doc.setFontSize(9.5);
+
+        // Row 1: Voucher No & Issue Date
+        doc.setFont('helvetica', 'bold');
+        doc.text('Voucher No:', 14, 40);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`${record.voucherNo || record._id}`, 42, 40);
+
+        doc.setFont('helvetica', 'bold');
+        doc.text('Issue Date:', 135, 40);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`${dayjs(record.createdAt).format('DD MMM YYYY')}`, 160, 40);
+
+        // Row 2: Fee Month & Due Date
+        doc.setFont('helvetica', 'bold');
+        doc.text('Fee Month:', 14, 47);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`${record.feeMonth || 'Current Month'}`, 42, 47);
+
+        doc.setFont('helvetica', 'bold');
+        doc.text('Due Date:', 135, 47);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`${dayjs(record.dueDate).format('DD MMM YYYY')}`, 160, 47);
+
+        // Status determination
+        const statusText = remainingAmount === 0 && totalFee > 0 ? 'PAID' : (totalPaid > 0 ? 'PARTIAL' : (record.status || 'PENDING'));
+
+        // Student Info Block & Status Badge Box (y: 53 to 79)
+        // Left Student Card
+        doc.setDrawColor(215, 220, 228);
+        doc.setFillColor(248, 250, 252);
+        doc.roundedRect(14, 53, 116, 26, 2, 2, 'FD');
+
+        doc.setTextColor(30, 30, 30);
+        doc.setFontSize(9.5);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`Student Name:  ${student.studentName || 'Student'}`, 18, 60);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`Roll Number:   ${student.rollNo || '-'}`, 18, 67);
+        doc.text(`Class & Sec:   ${className}`, 18, 74);
+
+        // Right Status Badge Card
+        doc.setDrawColor(215, 220, 228);
+        doc.setFillColor(255, 255, 255);
+        doc.roundedRect(135, 53, 61, 26, 2, 2, 'FD');
+
+        // Status Badge Fill
         if (statusText === 'PAID') {
             doc.setFillColor(82, 196, 26);
         } else if (statusText === 'PARTIAL') {
-            doc.setFillColor(250, 173, 20);
+            doc.setFillColor(250, 140, 22);
         } else {
             doc.setFillColor(255, 77, 79);
         }
-        doc.rect(130, 58, 65, 10, 'F');
+        doc.roundedRect(140, 57, 51, 9, 2, 2, 'F');
         doc.setTextColor(255, 255, 255);
-        doc.setFontSize(10);
-        doc.text(`STATUS: ${statusText}`, 162, 65, { align: 'center' });
-
-        // Student Info Block
-        doc.setDrawColor(220, 220, 220);
-        doc.setFillColor(248, 249, 250);
-        doc.rect(14, 58, 110, 26, 'FD');
-        doc.setTextColor(0, 0, 0);
-        doc.setFontSize(10);
         doc.setFont('helvetica', 'bold');
-        doc.text(`Student Name: ${student.studentName || 'Student'}`, 18, 65);
-        doc.setFont('helvetica', 'normal');
-        doc.text(`Roll Number: ${student.rollNo || '-'}`, 18, 72);
-        doc.text(`Class & Section: ${className}`, 18, 79);
+        doc.setFontSize(9.5);
+        doc.text(`STATUS: ${statusText}`, 165.5, 63, { align: 'center' });
 
-        // Itemized Fee Heads Table
-        const feeHeadsRows = (record.feeHeads && record.feeHeads.length > 0)
-            ? record.feeHeads.map(h => [h.headName, `Rs ${Number(h.amount).toLocaleString()}`])
-            : [['Tuition Fee', `Rs ${Number(record.netPayable || 0).toLocaleString()}`]];
+        doc.setFontSize(8.5);
+        doc.setFont('helvetica', 'normal');
+        if (statusText === 'PAID') {
+            doc.setTextColor(82, 196, 26);
+            doc.text('Dues Fully Cleared', 165.5, 73, { align: 'center' });
+        } else if (statusText === 'PARTIAL') {
+            doc.setTextColor(217, 83, 79);
+            doc.text(`Remaining: Rs ${remainingAmount.toLocaleString()}`, 165.5, 73, { align: 'center' });
+        } else {
+            doc.setTextColor(255, 77, 79);
+            doc.text(`Payable: Rs ${remainingAmount.toLocaleString()}`, 165.5, 73, { align: 'center' });
+        }
+
+        // Table 1: Itemized Fee Heads (startY: 84)
+        const feeHeadsRows = (feeHeadsList.length > 0)
+            ? feeHeadsList.map(h => [h.headName, `Rs ${Number(h.amount).toLocaleString()}`])
+            : [
+                ['Tuition Fee', `Rs ${Number(tuitionFee).toLocaleString()}`],
+                ['Transport Fee', `Rs ${Number(transportFee).toLocaleString()}`]
+            ];
 
         autoTable(doc, {
-            startY: 92,
+            startY: 84,
             head: [['Fee Head / Particulars', 'Amount (PKR)']],
             body: feeHeadsRows,
             theme: 'grid',
-            headStyles: { fillColor: [24, 144, 255], textColor: [255, 255, 255], fontStyle: 'bold' },
-            bodyStyles: { fontSize: 10 },
-            columnStyles: { 0: { cellWidth: 135 }, 1: { cellWidth: 45, halign: 'right' } }
+            headStyles: { fillColor: [24, 144, 255], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9.5 },
+            bodyStyles: { fontSize: 9, textColor: [40, 40, 40] },
+            columnStyles: { 0: { cellWidth: 135 }, 1: { cellWidth: 47, halign: 'right' } },
+            margin: { left: 14, right: 14 }
         });
 
-        let finalY = doc.lastAutoTable.finalY + 8;
+        const table1EndY = doc.lastAutoTable.finalY;
+        const summaryStartY = table1EndY + 6;
 
-        // Subtotal, Concessions, Net Payable Summary Block
-        doc.setFont('helvetica', 'normal');
-        doc.text(`Sub Total:`, 120, finalY);
-        doc.text(`Rs ${Number(record.subTotal || record.netPayable).toLocaleString()}`, 180, finalY, { align: 'right' });
+        // Build Financial Summary Rows
+        const summaryRows = [];
+        summaryRows.push(['Tuition Fee', `Rs ${tuitionFee.toLocaleString()}`]);
+        summaryRows.push(['Transport Fee', `Rs ${transportFee.toLocaleString()}`]);
 
-        if (record.totalConcession > 0) {
-            finalY += 6;
-            doc.setTextColor(235, 47, 6);
-            doc.text(`Discount / Concession:`, 120, finalY);
-            doc.text(`- Rs ${Number(record.totalConcession).toLocaleString()}`, 180, finalY, { align: 'right' });
+        if (concession > 0) {
+            summaryRows.push(['Discount / Concession', `- Rs ${concession.toLocaleString()}`]);
         }
 
-        finalY += 8;
+        summaryRows.push([
+            { content: 'Total Fee', styles: { fontStyle: 'bold', textColor: [20, 20, 20] } },
+            { content: `Rs ${totalFee.toLocaleString()}`, styles: { fontStyle: 'bold', halign: 'right', textColor: [20, 20, 20] } }
+        ]);
+
+        if (currentPayment) {
+            summaryRows.push(['Previously Paid', `Rs ${previouslyPaid.toLocaleString()}`]);
+            summaryRows.push([
+                { content: 'Payment Received', styles: { fontStyle: 'bold', textColor: [38, 154, 76] } },
+                { content: `Rs ${currentPaymentAmount.toLocaleString()}`, styles: { fontStyle: 'bold', halign: 'right', textColor: [38, 154, 76] } }
+            ]);
+            summaryRows.push([
+                { content: 'Total Paid So Far', styles: { fontStyle: 'bold' } },
+                { content: `Rs ${totalPaid.toLocaleString()}`, styles: { fontStyle: 'bold', halign: 'right' } }
+            ]);
+        } else {
+            summaryRows.push([
+                'Previously Paid',
+                `Rs ${totalPaid.toLocaleString()}`
+            ]);
+        }
+
+        // Remaining Amount / Net Payable Row (Highlight with bold and clear background)
+        const isFullyPaid = remainingAmount === 0;
+        summaryRows.push([
+            {
+                content: isFullyPaid ? 'Remaining Amount' : 'Remaining Amount / Net Payable',
+                styles: {
+                    fontStyle: 'bold',
+                    fontSize: 10,
+                    textColor: isFullyPaid ? [38, 154, 76] : [200, 30, 30],
+                    fillColor: isFullyPaid ? [240, 250, 240] : [255, 242, 235]
+                }
+            },
+            {
+                content: isFullyPaid ? 'Rs 0 (PAID)' : `Rs ${remainingAmount.toLocaleString()}`,
+                styles: {
+                    fontStyle: 'bold',
+                    fontSize: 10,
+                    halign: 'right',
+                    textColor: isFullyPaid ? [38, 154, 76] : [200, 30, 30],
+                    fillColor: isFullyPaid ? [240, 250, 240] : [255, 242, 235]
+                }
+            }
+        ]);
+
+        // Right side: Financial Summary Table via autoTable (Prevents any text overlap!)
+        autoTable(doc, {
+            startY: summaryStartY,
+            head: [['Fee Summary', 'Amount']],
+            body: summaryRows,
+            theme: 'grid',
+            headStyles: { fillColor: [44, 62, 80], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9 },
+            bodyStyles: { fontSize: 8.5, textColor: [40, 40, 40] },
+            columnStyles: { 0: { cellWidth: 55 }, 1: { cellWidth: 35, halign: 'right' } },
+            margin: { left: 106, right: 14 }
+        });
+
+        const summaryEndY = doc.lastAutoTable.finalY;
+        const panelHeight = Math.max(summaryEndY - summaryStartY, 46);
+
+        // Left side: Payment & Transaction Details Card
+        const leftBoxX = 14;
+        const leftBoxWidth = 87;
+
+        doc.setDrawColor(215, 220, 228);
+        doc.setFillColor(250, 251, 253);
+        doc.roundedRect(leftBoxX, summaryStartY, leftBoxWidth, panelHeight, 2, 2, 'FD');
+
+        // Header strip for Left Card
+        doc.setFillColor(235, 242, 250);
+        doc.roundedRect(leftBoxX, summaryStartY, leftBoxWidth, 7, 2, 2, 'F');
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(12);
+        doc.setFontSize(8.5);
         doc.setTextColor(24, 144, 255);
-        doc.text(`NET PAYABLE AMOUNT:`, 120, finalY);
-        doc.text(`Rs ${Number(record.netPayable).toLocaleString()}`, 180, finalY, { align: 'right' });
+        doc.text('PAYMENT DETAILS & TRANSACTION LOG', leftBoxX + 4, summaryStartY + 5);
 
-        // Payment Info Block if Paid
-        if (record.status === 'PAID' || record.status === 'PARTIAL') {
-            finalY += 14;
-            doc.setFontSize(10);
+        // Content inside Left Card
+        let lineY = summaryStartY + 12;
+        doc.setFontSize(8.5);
+        doc.setTextColor(50, 50, 50);
+
+        if (totalPaid > 0) {
+            doc.setFont('helvetica', 'bold');
+            doc.text('Payment Status:', leftBoxX + 4, lineY);
             doc.setFont('helvetica', 'normal');
-            doc.setTextColor(40, 40, 40);
-            doc.text(`Paid Amount: Rs ${Number(record.paidAmount || record.netPayable).toLocaleString()}`, 14, finalY);
-            doc.text(`Payment Method: ${record.paymentMethod || 'CASH'}`, 14, finalY + 6);
-            doc.text(`Paid Date: ${record.paidDate ? dayjs(record.paidDate).format('DD MMM YYYY') : '-'}`, 14, finalY + 12);
-            doc.text(`Received By: ${record.receivedBy || 'Accounts Officer'}`, 14, finalY + 18);
+            doc.text(statusText === 'PAID' ? 'Fully Paid' : `Partially Paid (Rs ${totalPaid.toLocaleString()} paid)`, leftBoxX + 32, lineY);
+
+            lineY += 5.5;
+            doc.setFont('helvetica', 'bold');
+            doc.text('Tuition Paid:', leftBoxX + 4, lineY);
+            doc.setFont('helvetica', 'normal');
+            doc.text(`Rs ${tuitionPaid.toLocaleString()}`, leftBoxX + 32, lineY);
+
+            lineY += 5.5;
+            doc.setFont('helvetica', 'bold');
+            doc.text('Transport Paid:', leftBoxX + 4, lineY);
+            doc.setFont('helvetica', 'normal');
+            doc.text(`Rs ${transportPaid.toLocaleString()}`, leftBoxX + 32, lineY);
+
+            lineY += 5.5;
+            doc.setFont('helvetica', 'bold');
+            doc.text('Payment Mode:', leftBoxX + 4, lineY);
+            doc.setFont('helvetica', 'normal');
+            doc.text(`${record.paymentMethod || currentPayment?.paymentMethod || 'CASH'}`, leftBoxX + 32, lineY);
+
+            lineY += 5.5;
+            doc.setFont('helvetica', 'bold');
+            doc.text('Last Paid Date:', leftBoxX + 4, lineY);
+            doc.setFont('helvetica', 'normal');
+            doc.text(`${record.paidDate ? dayjs(record.paidDate).format('DD MMM YYYY') : dayjs().format('DD MMM YYYY')}`, leftBoxX + 32, lineY);
+
+            lineY += 5.5;
+            doc.setFont('helvetica', 'bold');
+            doc.text('Received By:', leftBoxX + 4, lineY);
+            doc.setFont('helvetica', 'normal');
+            doc.text(`${record.receivedBy || 'Accounts Officer'}`, leftBoxX + 32, lineY);
+
+            if (record.remarks || currentPayment?.remarks) {
+                lineY += 5.5;
+                doc.setFont('helvetica', 'bold');
+                doc.text('Remarks:', leftBoxX + 4, lineY);
+                doc.setFont('helvetica', 'normal');
+                const rem = String(record.remarks || currentPayment?.remarks || '');
+                doc.text(rem.length > 30 ? rem.substring(0, 30) + '...' : rem, leftBoxX + 32, lineY);
+            }
+        } else {
+            doc.setFont('helvetica', 'bold');
+            doc.text('Payment Status:', leftBoxX + 4, lineY);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(235, 47, 6);
+            doc.text('UNPAID / PENDING', leftBoxX + 32, lineY);
+            doc.setTextColor(50, 50, 50);
+
+            lineY += 6;
+            doc.text('No payment has been recorded yet.', leftBoxX + 4, lineY);
+            lineY += 5.5;
+            doc.text(`Please submit Rs ${totalFee.toLocaleString()} on or before`, leftBoxX + 4, lineY);
+            lineY += 5.5;
+            doc.setFont('helvetica', 'bold');
+            doc.text(`Due Date: ${dayjs(record.dueDate).format('DD MMM YYYY')}`, leftBoxX + 4, lineY);
         }
 
-        // Footer Instructions & Signatures
-        doc.setFontSize(9);
-        doc.setFont('helvetica', 'italic');
-        doc.setTextColor(120, 120, 120);
-        doc.text('Note: Please pay dues on or before the due date to avoid late fine surcharge.', 14, 260);
-        doc.line(14, 270, 70, 270);
-        doc.text('Parent Signature', 30, 275);
-        doc.line(130, 270, 190, 270);
-        doc.text('Accounts / Cashier Seal', 145, 275);
+        // Bottom Footer Instructions & Signatures
+        const bottomY = Math.min(Math.max(summaryEndY + 12, 246), 268);
 
-        doc.save(`FeeVoucher_${record.voucherNo || record._id}.pdf`);
-        message.success('Official Fee Voucher PDF generated successfully!');
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'italic');
+        doc.setTextColor(110, 110, 110);
+        doc.text('Note: Please retain this official receipt/voucher. Dues must be settled on or before the due date.', 14, bottomY);
+
+        const sigY = bottomY + 14;
+        doc.setDrawColor(180, 180, 180);
+        doc.line(14, sigY, 70, sigY);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.5);
+        doc.setTextColor(60, 60, 60);
+        doc.text('Parent / Guardian Signature', 18, sigY + 4.5);
+
+        doc.line(135, sigY, 196, sigY);
+        doc.text('Cashier / Accounts Officer Seal', 139, sigY + 4.5);
+
+        // Save PDF file with clear naming
+        const prefix = isReceipt && remainingAmount === 0 ? 'FeeReceipt' : 'FeeVoucher';
+        doc.save(`${prefix}_${record.voucherNo || record._id}.pdf`);
+        message.success(`${isReceipt ? 'Official Fee Receipt' : 'Official Fee Voucher'} PDF generated successfully!`);
     };
 
     // Open Voucher Creation Modal
@@ -451,7 +698,7 @@ const Fees = () => {
         setSubmitLoading(true);
         try {
             const token = localStorage.getItem('token');
-            await axios.patch(`/api/v1/fees/${values.voucherId}/pay`, {
+            const res = await axios.patch(`/api/v1/fees/${values.voucherId}/pay`, {
                 tuitionAmount: tuitionPayAmount,
                 transportAmount: transportPayAmount,
                 paymentMethod: values.paymentMethod,
@@ -460,8 +707,48 @@ const Fees = () => {
                 headers: { Authorization: `Bearer ${token}` }
             });
 
-            message.success('Payment recorded successfully!');
+            const recordedAmount = tuitionPayAmount + transportPayAmount;
+            const updatedFeeRecord = res.data?.data;
+            const targetVoucher = selectedStudentForHistory?.vouchers?.find(v => v._id === values.voucherId) || selectedFeeRecord;
+
             setIsPayModalVisible(false);
+            message.success('Payment recorded successfully!');
+
+            // Prompt user with option to immediately print receipt
+            if (updatedFeeRecord || targetVoucher) {
+                const voucherToPrint = updatedFeeRecord || {
+                    ...targetVoucher,
+                    paidAmount: (targetVoucher.paidAmount || 0) + recordedAmount,
+                    academicPaid: (targetVoucher.academicPaid || 0) + tuitionPayAmount,
+                    transportPaid: (targetVoucher.transportPaid || 0) + transportPayAmount,
+                    paidDate: new Date(),
+                    paymentMethod: values.paymentMethod,
+                    receivedBy: 'Accounts Officer',
+                    status: ((targetVoucher.paidAmount || 0) + recordedAmount) >= targetVoucher.netPayable ? 'PAID' : 'PARTIAL'
+                };
+
+                Modal.confirm({
+                    title: 'Payment Recorded Successfully',
+                    icon: <CheckCircleOutlined style={{ color: '#52c41a' }} />,
+                    content: `Payment of Rs ${recordedAmount.toLocaleString()} has been recorded. Would you like to print the official payment receipt now?`,
+                    okText: 'Print Receipt',
+                    cancelText: 'Close',
+                    onOk() {
+                        generateVoucherPDF(voucherToPrint, {
+                            isReceipt: true,
+                            currentPayment: {
+                                amount: recordedAmount,
+                                tuitionAmount: tuitionPayAmount,
+                                transportAmount: transportPayAmount,
+                                date: new Date(),
+                                paymentMethod: values.paymentMethod,
+                                remarks: values.remarks
+                            }
+                        });
+                    }
+                });
+            }
+
             fetchFees();
         } catch (err) {
             message.error(extractErrorMessage(err));
@@ -547,6 +834,17 @@ const Fees = () => {
                             Record Payment
                         </Button>
                     )}
+                    {record.vouchers && record.vouchers.length > 0 && (
+                        <Tooltip title="Print Latest Fee Voucher / Receipt">
+                            <Button 
+                                icon={<PrinterOutlined />} 
+                                onClick={() => {
+                                    const latestVoucher = record.vouchers[record.vouchers.length - 1];
+                                    generateVoucherPDF({ ...latestVoucher, studentId: record.student });
+                                }}
+                            />
+                        </Tooltip>
+                    )}
                 </Space>
             )
         }
@@ -600,7 +898,7 @@ const Fees = () => {
                     {record.status !== 'PAID' && (
                         <Button size="small" type="primary" onClick={() => openPayModal(selectedStudentForHistory, record._id)}>Pay</Button>
                     )}
-                    <Tooltip title="Print Voucher PDF">
+                    <Tooltip title={record.paidAmount > 0 ? (record.status === 'PAID' ? "Print Payment Receipt" : "Print Voucher / Receipt") : "Print Fee Voucher"}>
                         <Button size="small" icon={<PrinterOutlined />} onClick={() => generateVoucherPDF(record)} />
                     </Tooltip>
                     <Popconfirm title="Delete?" onConfirm={() => handleDeleteFee(record._id)}>
@@ -1203,6 +1501,71 @@ const Fees = () => {
                     dataSource={selectedStudentForHistory?.vouchers || []}
                     rowKey="_id"
                     pagination={false}
+                    expandable={{
+                        expandedRowRender: (record) => {
+                            const logs = record.paymentHistory || [];
+                            if (logs.length === 0) {
+                                return (
+                                    <div style={{ padding: '8px 16px', color: '#8c8c8c' }}>
+                                        No individual payment transaction logs recorded for this voucher.
+                                    </div>
+                                );
+                            }
+                            return (
+                                <div style={{ padding: '12px 16px', background: '#fafbfc', borderRadius: '6px', border: '1px solid #edf0f2' }}>
+                                    <div style={{ fontWeight: 600, marginBottom: 8, color: '#1890ff', display: 'flex', justifyContent: 'space-between' }}>
+                                        <span>Payment Transaction History ({logs.length} payment{logs.length > 1 ? 's' : ''}):</span>
+                                        <span style={{ color: '#52c41a' }}>Total Paid: Rs {Number(record.paidAmount || 0).toLocaleString()}</span>
+                                    </div>
+                                    <Table
+                                        size="small"
+                                        pagination={false}
+                                        dataSource={logs}
+                                        rowKey={(item, index) => index}
+                                        columns={[
+                                            { 
+                                                title: 'Date', 
+                                                dataIndex: 'date', 
+                                                render: d => dayjs(d).format('DD MMM YYYY, hh:mm A') 
+                                            },
+                                            { 
+                                                title: 'Tuition Paid', 
+                                                dataIndex: 'tuitionAmount', 
+                                                render: a => `Rs ${Number(a || 0).toLocaleString()}` 
+                                            },
+                                            { 
+                                                title: 'Transport Paid', 
+                                                dataIndex: 'transportAmount', 
+                                                render: a => `Rs ${Number(a || 0).toLocaleString()}` 
+                                            },
+                                            { 
+                                                title: 'Total Received', 
+                                                dataIndex: 'amount', 
+                                                render: a => <strong style={{ color: '#52c41a' }}>Rs {Number(a || 0).toLocaleString()}</strong> 
+                                            },
+                                            { title: 'Method', dataIndex: 'paymentMethod' },
+                                            { title: 'Remarks', dataIndex: 'remarks', render: r => r || '-' },
+                                            {
+                                                title: 'Action',
+                                                key: 'print',
+                                                render: (_, p) => (
+                                                    <Button 
+                                                        size="small" 
+                                                        type="link" 
+                                                        icon={<PrinterOutlined />} 
+                                                        onClick={() => generateVoucherPDF(record, { isReceipt: true, currentPayment: p })}
+                                                    >
+                                                        Print Receipt
+                                                    </Button>
+                                                )
+                                            }
+                                        ]}
+                                    />
+                                </div>
+                            );
+                        },
+                        rowExpandable: record => (record.paymentHistory && record.paymentHistory.length > 0)
+                    }}
                 />
             </Modal>
         </div>

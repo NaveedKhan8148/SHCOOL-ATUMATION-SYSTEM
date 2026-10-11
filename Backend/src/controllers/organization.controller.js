@@ -135,36 +135,80 @@ const registerOrganization = asyncHandler(async (req, res) => {
  * Requires a valid JWT (verifyJWT middleware).
  */
 const getMyOrganization = asyncHandler(async (req, res) => {
-    const org = await Organization.findOne({ organizationId: req.user.organizationId });
-    if (!org) throw new ApiError(404, "Organization not found");
-
-    return res.status(200).json(new ApiResponse(200, org, "Organization fetched"));
-});
-
-// ── PATCH /api/v1/organizations/me ───────────────────────────────────────────
-/**
- * Updates editable fields of the current user's organization (ADMIN only).
- */
-const updateMyOrganization = asyncHandler(async (req, res) => {
-    if (req.user.role !== "ADMIN") {
-        throw new ApiError(403, "Only ADMIN can update organization details");
+    const orgId = req.user.organizationId || "default";
+    let org = await Organization.findOne({ organizationId: orgId });
+    
+    if (!org) {
+        // Fallback: check if any organization exists in DB (for single-org deployments)
+        const anyOrg = await Organization.findOne({});
+        if (anyOrg && (!req.user.organizationId || req.user.organizationId === "default" || req.user.organizationId === anyOrg.organizationId)) {
+            org = anyOrg;
+        }
     }
 
-    const allowed = ["name", "phone", "address", "logoUrl"];
-    const updates = {};
-    allowed.forEach((field) => {
-        if (req.body[field] !== undefined) updates[field] = req.body[field];
-    });
+    if (!org) {
+        return res.status(200).json(new ApiResponse(200, {
+            organizationId: orgId,
+            name: "",
+            isConfigured: false
+        }, "Organization not configured yet"));
+    }
 
+    return res.status(200).json(new ApiResponse(200, {
+        ...org.toObject(),
+        isConfigured: !!(org.name && org.name.trim())
+    }, "Organization fetched successfully"));
+});
+
+// ── PATCH/POST /api/v1/organizations/me ───────────────────────────────────────────
+/**
+ * Updates or sets editable fields of the current user's organization (ADMIN only).
+ * Supports both initial save and updates without creating duplicate records.
+ */
+const updateMyOrganization = asyncHandler(async (req, res) => {
+    if (req.user.role !== "ADMIN" && req.user.role !== "SUPERADMIN") {
+        throw new ApiError(403, "Only ADMIN can update organization settings");
+    }
+
+    const { name, phone, address, logoUrl } = req.body;
+
+    if (name !== undefined) {
+        const trimmed = typeof name === "string" ? name.trim() : "";
+        if (!trimmed) {
+            throw new ApiError(400, "Organization name is required and cannot be empty or only spaces");
+        }
+        if (trimmed.length > 150) {
+            throw new ApiError(400, "Organization name cannot exceed 150 characters");
+        }
+    }
+
+    const updates = {};
+    if (name !== undefined) updates.name = name.trim();
+    if (phone !== undefined) updates.phone = phone?.trim();
+    if (address !== undefined) updates.address = address?.trim();
+    if (logoUrl !== undefined) updates.logoUrl = logoUrl?.trim();
+
+    const targetOrgId = req.user.organizationId || "default";
+
+    // Atomically find and update, or insert if not exists (upsert)
+    // Ensures strictly ONE record per organizationId with NO duplicates!
     const org = await Organization.findOneAndUpdate(
-        { organizationId: req.user.organizationId },
-        { $set: updates },
-        { new: true, runValidators: true }
+        { organizationId: targetOrgId },
+        { 
+            $set: updates,
+            $setOnInsert: {
+                organizationId: targetOrgId,
+                email: req.user.email || `${targetOrgId}@school.edu`,
+                status: "ACTIVE"
+            }
+        },
+        { new: true, upsert: true, runValidators: true }
     );
 
-    if (!org) throw new ApiError(404, "Organization not found");
-
-    return res.status(200).json(new ApiResponse(200, org, "Organization updated"));
+    return res.status(200).json(new ApiResponse(200, {
+        ...org.toObject(),
+        isConfigured: true
+    }, "Organization settings saved successfully"));
 });
 
 // ── GET /api/v1/organizations  (super-admin / platform-level, optional) ──────

@@ -107,6 +107,8 @@ export const AuthProvider = ({ children }) => {
         localStorage.removeItem('accessToken');
         localStorage.removeItem('refreshToken');
         localStorage.removeItem('organizationId');
+        localStorage.removeItem('organizationName');
+        localStorage.removeItem('organizationData');
         delete axios.defaults.headers.common['Authorization'];
 
         if (skipApiCall) {

@@ -11,11 +11,13 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import axios from 'axios';
 import dayjs from 'dayjs';
+import { useOrganization } from '../context/OrganizationContext';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
 
 const Payroll = () => {
+    const { organizationName } = useOrganization();
     const [teachers, setTeachers] = useState([]);
     const [payrolls, setPayrolls] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -104,25 +106,30 @@ const Payroll = () => {
     const generatePayslipPDF = (record) => {
         const doc = new jsPDF();
         const teacher = record.teacherId || {};
+        const orgDisplayName = (organizationName || localStorage.getItem('organizationName') || 'SCHOOL AUTOMATION SYSTEM').toUpperCase();
 
         doc.setFillColor(114, 46, 209);
-        doc.rect(0, 0, 210, 32, 'F');
+        doc.rect(0, 0, 210, 36, 'F');
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(18);
+        doc.setFontSize(17);
         doc.setTextColor(255, 255, 255);
-        doc.text('OFFICIAL STAFF PAYSLIP', 105, 16, { align: 'center' });
+        doc.text(orgDisplayName, 105, 15, { align: 'center' });
 
-        doc.setFontSize(10);
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'bold');
+        doc.text('OFFICIAL STAFF PAYSLIP', 105, 23, { align: 'center' });
+
+        doc.setFontSize(9);
         doc.setFont('helvetica', 'normal');
-        doc.text('SCHOOL AUTOMATION SYSTEM - SALARY DISBURSEMENT SLIP', 105, 24, { align: 'center' });
+        doc.text('SALARY DISBURSEMENT STATEMENT', 105, 30, { align: 'center' });
 
         doc.setTextColor(40, 40, 40);
         doc.setFontSize(11);
         doc.setFont('helvetica', 'bold');
-        doc.text(`Payslip No: ${record.payslipNo || record._id}`, 14, 44);
-        doc.text(`Salary Month: ${record.month || 'Current Month'}`, 14, 52);
-        doc.text(`Staff Name: ${teacher.name || 'Teacher'}`, 130, 44);
-        doc.text(`Status: ${record.status || 'PENDING'}`, 130, 52);
+        doc.text(`Payslip No: ${record.payslipNo || record._id}`, 14, 46);
+        doc.text(`Salary Month: ${record.month || 'Current Month'}`, 14, 54);
+        doc.text(`Staff Name: ${teacher.name || 'Teacher'}`, 130, 46);
+        doc.text(`Status: ${record.status || 'PENDING'}`, 130, 54);
 
         const tableBody = [
             ['Basic Salary', `Rs ${Number(record.basicSalary).toLocaleString()}`],

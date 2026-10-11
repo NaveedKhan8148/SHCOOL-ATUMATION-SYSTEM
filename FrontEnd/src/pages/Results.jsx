@@ -18,6 +18,7 @@ import axios from 'axios';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import { generateStudentTranscriptPDF, calculateGrade } from '../utils/transcriptGenerator';
+import { useOrganization } from '../context/OrganizationContext';
 
 dayjs.extend(relativeTime);
 
@@ -46,6 +47,7 @@ const GRADE_BG_COLOR = {
 };
 
 const Results = () => {
+    const { organizationName } = useOrganization();
     const [results, setResults] = useState([]);
     const [allResults, setAllResults] = useState([]);
     const [students, setStudents] = useState([]);
@@ -609,7 +611,7 @@ const Results = () => {
                 className: className || '-',
                 semester: targetSemester || studentResults[0]?.semester || 'Academic Term',
                 results: studentResults,
-                schoolName: orgName,
+                schoolName: organizationName || orgName,
             });
 
             message.success('Official Complete Student Transcript downloaded');

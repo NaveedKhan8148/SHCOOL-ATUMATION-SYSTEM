@@ -25,9 +25,14 @@ export const generateStudentTranscriptPDF = ({
     className = '-',
     semester = 'Academic Term',
     results = [],
-    schoolName = 'SCHOOL AUTOMATION SYSTEM'
+    schoolName = ''
 }) => {
     const doc = new jsPDF();
+
+    const cachedOrgName = typeof window !== 'undefined' ? localStorage.getItem('organizationName') : '';
+    const finalSchoolName = (schoolName && schoolName.trim())
+        ? schoolName.trim().toUpperCase()
+        : (cachedOrgName && cachedOrgName.trim() ? cachedOrgName.trim().toUpperCase() : 'SCHOOL AUTOMATION SYSTEM');
 
     // 1. Primary Header Banner
     doc.setFillColor(30, 58, 138); // Deep Navy Blue
@@ -36,7 +41,7 @@ export const generateStudentTranscriptPDF = ({
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(18);
     doc.setTextColor(255, 255, 255);
-    doc.text(schoolName.toUpperCase(), 105, 15, { align: 'center' });
+    doc.text(finalSchoolName, 105, 15, { align: 'center' });
 
     doc.setFontSize(11);
     doc.setFont('helvetica', 'normal');

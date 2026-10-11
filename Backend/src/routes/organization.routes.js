@@ -21,7 +21,7 @@ router.route("/check/:organizationId").get(checkOrganization);
 router.route("/").get(getAllOrganizations);
 
 // ── Authenticated ─────────────────────────────────────────────────────────────
-router.route("/me").get(verifyJWT, getMyOrganization);
-router.route("/me").patch(verifyJWT, updateMyOrganization);
+router.route("/me").get(verifyJWT, getMyOrganization).patch(verifyJWT, updateMyOrganization).post(verifyJWT, updateMyOrganization);
+router.route("/settings").get(verifyJWT, getMyOrganization).patch(verifyJWT, updateMyOrganization).post(verifyJWT, updateMyOrganization);
 
 export default router;

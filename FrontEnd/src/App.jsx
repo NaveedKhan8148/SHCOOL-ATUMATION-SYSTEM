@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { OrganizationProvider } from './context/OrganizationContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import MainLayout from './components/MainLayout';
 import StudentLayout from './components/StudentLayout';
@@ -67,9 +68,11 @@ const RoleBasedRedirect = () => {
 function App() {
     return (
         <AuthProvider>
-            <BrowserRouter>
-                <AppRoutes />
-            </BrowserRouter>
+            <OrganizationProvider>
+                <BrowserRouter>
+                    <AppRoutes />
+                </BrowserRouter>
+            </OrganizationProvider>
         </AuthProvider>
     );
 }

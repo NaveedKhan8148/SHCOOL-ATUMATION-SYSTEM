@@ -13,6 +13,7 @@ import {
 import axios from 'axios';
 import dayjs from 'dayjs';
 import { useAuth } from '../context/AuthContext';
+import { useOrganization } from '../context/OrganizationContext';
 import { generateStudentTranscriptPDF } from '../utils/transcriptGenerator';
 
 const { Title, Text } = Typography;
@@ -34,6 +35,7 @@ const GRADE_BG_COLOR = {
 
 const StudentResults = () => {
     const { profile, loading: authLoading } = useAuth();
+    const { organizationName } = useOrganization();
     const [results, setResults] = useState([]);
     const [loadingResults, setLoadingResults] = useState(false);
     const [searchText, setSearchText] = useState('');
@@ -266,7 +268,8 @@ const StudentResults = () => {
             fatherName: profile?.fatherName || '-',
             className: profile?.classId?.name || '-',
             semester: selectedSemester || 'Academic Session',
-            results: filteredResults.length > 0 ? filteredResults : results
+            results: filteredResults.length > 0 ? filteredResults : results,
+            schoolName: organizationName
         });
     };
 
