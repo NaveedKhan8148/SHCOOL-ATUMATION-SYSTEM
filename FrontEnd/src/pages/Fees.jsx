@@ -10,7 +10,7 @@ import {
     DollarOutlined, ClockCircleOutlined, WarningOutlined,
     UserOutlined, FileTextOutlined, SaveOutlined, SearchOutlined,
     MinusCircleOutlined, DollarCircleOutlined, BankOutlined, CheckCircleOutlined,
-    CarOutlined, FundOutlined, PieChartOutlined, RiseOutlined
+    CarOutlined, FundOutlined, PieChartOutlined, RiseOutlined, CloseCircleOutlined
 } from '@ant-design/icons';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -30,7 +30,8 @@ const Fees = () => {
     const [isVoucherModalVisible, setIsVoucherModalVisible] = useState(false);
     const [isPayModalVisible, setIsPayModalVisible] = useState(false);
     const [isHistoryModalVisible, setIsHistoryModalVisible] = useState(false);
-    const [selectedStudentForHistory, setSelectedStudentForHistory] = useState(null);
+    const [selectedStudentIdForHistory, setSelectedStudentIdForHistory] = useState(null);
+    const [fallbackStudentHistory, setFallbackStudentHistory] = useState(null);
     const [selectedFeeRecord, setSelectedFeeRecord] = useState(null);
     const [searchText, setSearchText] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
@@ -87,12 +88,12 @@ const Fees = () => {
         }
     };
 
-    // Filter fees by Student
-    const studentFeeSummary = useMemo(() => {
+    // Full unfiltered student fee summary (reactive source of truth)
+    const allStudentFeeSummary = useMemo(() => {
         const summary = {};
         fees.forEach(f => {
             if (!f.studentId) return;
-            const sId = f.studentId._id;
+            const sId = (f.studentId && typeof f.studentId === 'object' && f.studentId._id) ? f.studentId._id : f.studentId;
             if (!summary[sId]) {
                 summary[sId] = {
                     student: f.studentId,
@@ -106,7 +107,7 @@ const Fees = () => {
                 };
             }
 
-            const expectedTransport = f.feeHeads.reduce((acc, h) => acc + (h.headName.toLowerCase().includes('transport') ? h.amount : 0), 0);
+            const expectedTransport = f.feeHeads ? f.feeHeads.reduce((acc, h) => acc + (h.headName.toLowerCase().includes('transport') ? h.amount : 0), 0) : 0;
             const expectedAcademic = Math.max(0, f.netPayable - expectedTransport);
 
             summary[sId].totalFee += f.netPayable;
@@ -136,15 +137,30 @@ const Fees = () => {
             // Sort vouchers by dueDate
             s.vouchers.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
             return s;
-        }).filter(s => {
-            const name = s.student.studentName || '';
-            const roll = s.student.rollNo || '';
+        });
+    }, [fees]);
+
+    // Filter fees by Student for main table display
+    const studentFeeSummary = useMemo(() => {
+        return allStudentFeeSummary.filter(s => {
+            const name = s.student?.studentName || '';
+            const roll = s.student?.rollNo || '';
             const matchesSearch = name.toLowerCase().includes(searchText.toLowerCase()) || roll.toLowerCase().includes(searchText.toLowerCase());
             const matchesStatus = statusFilter ? s.status === statusFilter : true;
-            const matchesClass = classFilter ? s.student.classId?._id === classFilter : true;
+            const matchesClass = classFilter ? ((s.student?.classId?._id === classFilter) || (s.student?.classId === classFilter)) : true;
             return matchesSearch && matchesStatus && matchesClass;
         });
-    }, [fees, searchText, statusFilter, classFilter]);
+    }, [allStudentFeeSummary, searchText, statusFilter, classFilter]);
+
+    // Reactively derived selected student history (updates immediately when fees change)
+    const selectedStudentForHistory = useMemo(() => {
+        if (!selectedStudentIdForHistory) return fallbackStudentHistory;
+        const found = allStudentFeeSummary.find(s => {
+            const sId = (s.student && typeof s.student === 'object' && s.student._id) ? s.student._id : s.student;
+            return String(sId) === String(selectedStudentIdForHistory);
+        });
+        return found || fallbackStudentHistory;
+    }, [allStudentFeeSummary, selectedStudentIdForHistory, fallbackStudentHistory]);
 
     // Financial Overview Counters
     const totalCollected = useMemo(() => {
@@ -196,9 +212,15 @@ const Fees = () => {
             ? record.studentId
             : (selectedStudentForHistory?.student || record.studentId || {});
 
-        const className = student.classId?.name
-            ? `${student.classId.name}${student.classId.section ? ` (${student.classId.section})` : ''}`
-            : (student.className || '-');
+        let className = '-';
+        if (student.classId && typeof student.classId === 'object' && student.classId.name) {
+            className = `${student.classId.name}${student.classId.section ? ` (${student.classId.section})` : ''}`;
+        } else if (student.classId && typeof student.classId === 'string') {
+            const foundCls = classes.find(c => c._id === student.classId);
+            className = foundCls ? `${foundCls.name}${foundCls.section ? ` (${foundCls.section})` : ''}` : (student.className || '-');
+        } else if (student.className) {
+            className = student.className;
+        }
 
         // Extract Fee Heads
         let rawTuitionTotal = 0;
@@ -594,7 +616,11 @@ const Fees = () => {
 
     // Open History Modal
     const openHistoryModal = (record) => {
-        setSelectedStudentForHistory(record);
+        const sId = (record?.student && typeof record.student === 'object' && record.student._id)
+            ? record.student._id
+            : (record?.student || record?._id);
+        setSelectedStudentIdForHistory(sId);
+        setFallbackStudentHistory(record);
         setIsHistoryModalVisible(true);
     };
 
@@ -623,15 +649,21 @@ const Fees = () => {
 
     // Open Mark Paid Modal
     const openPayModal = (studentRecord, defaultVoucherId = null) => {
-        setSelectedStudentForHistory(studentRecord);
-        const unpaidVouchers = studentRecord.vouchers.filter(v => (v.netPayable - (v.paidAmount || 0)) > 0);
+        const sId = (studentRecord?.student && typeof studentRecord.student === 'object' && studentRecord.student._id)
+            ? studentRecord.student._id
+            : (studentRecord?.student || studentRecord?._id);
+        if (sId) {
+            setSelectedStudentIdForHistory(sId);
+            setFallbackStudentHistory(studentRecord);
+        }
+        const unpaidVouchers = (studentRecord?.vouchers || []).filter(v => (v.netPayable - (v.paidAmount || 0)) > 0);
         if (unpaidVouchers.length === 0) {
             message.info('No pending fees to pay for this student.');
             return;
         }
         
         const toPayId = defaultVoucherId || unpaidVouchers[0]._id;
-        const voucher = unpaidVouchers.find(v => v._id === toPayId);
+        const voucher = unpaidVouchers.find(v => v._id === toPayId) || unpaidVouchers[0];
         const bd = getFeeBreakdown(voucher);
         
         setSelectedFeeRecord(voucher);
@@ -649,7 +681,8 @@ const Fees = () => {
     };
 
     const handleVoucherSelectChange = (voucherId) => {
-        const voucher = selectedStudentForHistory.vouchers.find(v => v._id === voucherId);
+        const voucher = selectedStudentForHistory?.vouchers?.find(v => v._id === voucherId);
+        if (!voucher) return;
         setSelectedFeeRecord(voucher);
         const bd = getFeeBreakdown(voucher);
         setTuitionPayAmount(bd.tuitionRemaining);
@@ -711,12 +744,30 @@ const Fees = () => {
             const updatedFeeRecord = res.data?.data;
             const targetVoucher = selectedStudentForHistory?.vouchers?.find(v => v._id === values.voucherId) || selectedFeeRecord;
 
+            // Immediately update local state so both modal and table update instantly without page refresh
+            if (updatedFeeRecord) {
+                setFees(prevFees => prevFees.map(f => f._id === updatedFeeRecord._id ? { ...f, ...updatedFeeRecord } : f));
+                setFallbackStudentHistory(prev => {
+                    if (!prev || !prev.vouchers) return prev;
+                    return {
+                        ...prev,
+                        vouchers: prev.vouchers.map(v => v._id === updatedFeeRecord._id ? { ...v, ...updatedFeeRecord } : v)
+                    };
+                });
+                setSelectedFeeRecord(updatedFeeRecord);
+            }
+
             setIsPayModalVisible(false);
             message.success('Payment recorded successfully!');
 
             // Prompt user with option to immediately print receipt
             if (updatedFeeRecord || targetVoucher) {
-                const voucherToPrint = updatedFeeRecord || {
+                const voucherToPrint = updatedFeeRecord ? {
+                    ...updatedFeeRecord,
+                    studentId: (updatedFeeRecord.studentId && typeof updatedFeeRecord.studentId === 'object' && updatedFeeRecord.studentId.studentName)
+                        ? updatedFeeRecord.studentId
+                        : (selectedStudentForHistory?.student || targetVoucher?.studentId || {})
+                } : {
                     ...targetVoucher,
                     paidAmount: (targetVoucher.paidAmount || 0) + recordedAmount,
                     academicPaid: (targetVoucher.academicPaid || 0) + tuitionPayAmount,
@@ -749,7 +800,8 @@ const Fees = () => {
                 });
             }
 
-            fetchFees();
+            // Sync authoritative state from database
+            await fetchFees();
         } catch (err) {
             message.error(extractErrorMessage(err));
         } finally {
@@ -764,9 +816,31 @@ const Fees = () => {
                 headers: { Authorization: `Bearer ${token}` }
             });
             message.success('Fee record deleted');
-            fetchFees();
+            // Immediately update local state
+            setFees(prevFees => prevFees.filter(f => f._id !== id));
+            setFallbackStudentHistory(prev => {
+                if (!prev || !prev.vouchers) return prev;
+                return {
+                    ...prev,
+                    vouchers: prev.vouchers.filter(v => v._id !== id)
+                };
+            });
+            await fetchFees();
         } catch (err) {
-            message.error(extractErrorMessage(err));
+            const errMsg = extractErrorMessage(err);
+            const isProtected = err?.response?.status === 409 ||
+                (errMsg && errMsg.toLowerCase().includes('payment history'));
+            if (isProtected) {
+                Modal.warning({
+                    title: 'Deletion Not Permitted',
+                    icon: <CloseCircleOutlined style={{ color: '#ff4d4f' }} />,
+                    content: 'This fee record has payment history and cannot be deleted. ' +
+                             'Paid and partially-paid records are permanently protected to maintain financial transparency and audit integrity.',
+                    okText: 'Understood',
+                });
+            } else {
+                message.error(errMsg || 'Failed to delete fee record.');
+            }
         }
     };
 
@@ -893,19 +967,41 @@ const Fees = () => {
         },
         { title: 'Status', dataIndex: 'status', key: 'status', render: status => <Tag color={status === 'PAID' ? 'green' : status === 'OVERDUE' ? 'red' : status === 'PARTIAL' ? 'orange' : 'gold'}>{status}</Tag> },
         {
-            title: 'Actions', key: 'actions', render: (_, record) => (
-                <Space>
-                    {record.status !== 'PAID' && (
-                        <Button size="small" type="primary" onClick={() => openPayModal(selectedStudentForHistory, record._id)}>Pay</Button>
-                    )}
-                    <Tooltip title={record.paidAmount > 0 ? (record.status === 'PAID' ? "Print Payment Receipt" : "Print Voucher / Receipt") : "Print Fee Voucher"}>
-                        <Button size="small" icon={<PrinterOutlined />} onClick={() => generateVoucherPDF(record)} />
-                    </Tooltip>
-                    <Popconfirm title="Delete?" onConfirm={() => handleDeleteFee(record._id)}>
-                        <Button danger size="small" icon={<DeleteOutlined />} />
-                    </Popconfirm>
-                </Space>
-            )
+            title: 'Actions', key: 'actions', render: (_, record) => {
+                // A record is "paid" (in any amount) when paidAmount > 0 OR paymentHistory exists
+                const hasPaid = (record.paidAmount || 0) > 0 ||
+                                (record.academicPaid || 0) > 0 ||
+                                (record.transportPaid || 0) > 0 ||
+                                (record.paymentHistory && record.paymentHistory.length > 0);
+                const isFullyPaid = record.status === 'PAID';
+                const canDelete = !hasPaid;
+
+                return (
+                    <Space>
+                        {!isFullyPaid && (
+                            <Button size="small" type="primary" onClick={() => openPayModal(selectedStudentForHistory, record._id)}>Pay</Button>
+                        )}
+                        <Tooltip title={record.paidAmount > 0 ? (record.status === 'PAID' ? "Print Payment Receipt" : "Print Voucher / Receipt") : "Print Fee Voucher"}>
+                            <Button size="small" icon={<PrinterOutlined />} onClick={() => generateVoucherPDF(record)} />
+                        </Tooltip>
+                        {canDelete ? (
+                            <Popconfirm
+                                title="Delete this fee record?"
+                                description="This unpaid record will be permanently removed."
+                                onConfirm={() => handleDeleteFee(record._id)}
+                                okText="Delete"
+                                cancelText="Cancel"
+                            >
+                                <Button danger size="small" icon={<DeleteOutlined />} />
+                            </Popconfirm>
+                        ) : (
+                            <Tooltip title="Paid fee records cannot be deleted to maintain financial transparency.">
+                                <Button danger size="small" icon={<DeleteOutlined />} disabled />
+                            </Tooltip>
+                        )}
+                    </Space>
+                );
+            }
         }
     ];
 
@@ -1492,7 +1588,11 @@ const Fees = () => {
             <Modal
                 title={`Fee History: ${selectedStudentForHistory?.student?.studentName || ''}`}
                 open={isHistoryModalVisible}
-                onCancel={() => setIsHistoryModalVisible(false)}
+                onCancel={() => {
+                    setIsHistoryModalVisible(false);
+                    setSelectedStudentIdForHistory(null);
+                    setFallbackStudentHistory(null);
+                }}
                 footer={null}
                 width={850}
             >

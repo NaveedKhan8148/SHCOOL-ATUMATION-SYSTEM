@@ -237,13 +237,39 @@ const markFeePaid = asyncHandler(async (req, res) => {
 
     await feeRecord.save();
 
+    await feeRecord.populate([
+        {
+            path: "studentId",
+            select: "studentName rollNo classId",
+            populate: { path: "classId", select: "name section" }
+        },
+        { path: "academicSessionId", select: "name" }
+    ]);
+
     return res.status(200).json(new ApiResponse(200, feeRecord, `Payment recorded successfully`));
 });
 
 // DELETE /api/v1/fees/:id
 const deleteFee = asyncHandler(async (req, res) => {
-    const fee = await Fees.findOneAndDelete({ _id: req.params.id, organizationId: req.user.organizationId });
+    // First fetch without deleting so we can inspect payment state
+    const fee = await Fees.findOne({ _id: req.params.id, organizationId: req.user.organizationId });
     if (!fee) throw new ApiError(404, "Fee record not found");
+
+    // Guard: reject deletion if any payment has been made against this record
+    const hasPaid = (fee.paidAmount && fee.paidAmount > 0) ||
+                    (fee.paymentHistory && fee.paymentHistory.length > 0) ||
+                    (fee.academicPaid && fee.academicPaid > 0) ||
+                    (fee.transportPaid && fee.transportPaid > 0);
+
+    if (hasPaid) {
+        throw new ApiError(
+            409,
+            "This fee record has payment history and cannot be deleted. " +
+            "Paid and partially-paid fee records are protected to maintain financial transparency and audit integrity."
+        );
+    }
+
+    await fee.deleteOne();
     return res.status(200).json(new ApiResponse(200, {}, "Fee record deleted"));
 });
 

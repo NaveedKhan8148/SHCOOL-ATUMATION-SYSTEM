@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
     Table, Button, Input, Space, Tag, Modal, Form, Select,
-    message, Card, Row, Col, Popconfirm, Tooltip, Avatar, Typography, Badge, DatePicker
+    message, Card, Row, Col, Popconfirm, Tooltip, Avatar, Typography, Badge, DatePicker,
+    Drawer, Spin, Empty
 } from 'antd';
 import {
     PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined,
     ReloadOutlined, BookOutlined, UserOutlined, TeamOutlined,
-    SaveOutlined, ClockCircleOutlined, CalendarOutlined, PartitionOutlined
+    SaveOutlined, ClockCircleOutlined, CalendarOutlined, PartitionOutlined,
+    IdcardOutlined, PhoneOutlined, ManOutlined, WomanOutlined, SolutionOutlined,
+    EyeOutlined, CheckCircleOutlined, HomeOutlined, MailOutlined
 } from '@ant-design/icons';
 import axios from 'axios';
 import dayjs from 'dayjs';
@@ -23,6 +26,13 @@ const Classes = () => {
     const [tableLoading, setTableLoading] = useState(false);
     const [submitLoading, setSubmitLoading] = useState(false);
     const [form] = Form.useForm();
+
+    // Students Drawer state
+    const [drawerOpen, setDrawerOpen] = useState(false);
+    const [drawerClass, setDrawerClass] = useState(null);  // the class record
+    const [drawerStudents, setDrawerStudents] = useState([]);
+    const [drawerLoading, setDrawerLoading] = useState(false);
+    const [drawerSearchText, setDrawerSearchText] = useState('');
 
     // Helper function to extract error message from any response format
     const extractErrorMessage = (error) => {
@@ -71,6 +81,50 @@ const Classes = () => {
             message.error(errorMsg);
         } finally {
             setTableLoading(false);
+        }
+    };
+
+    const openStudentsDrawer = async (classRecord) => {
+        setDrawerClass(classRecord);
+        setDrawerOpen(true);
+        setDrawerSearchText('');
+        setDrawerStudents([]);
+        setDrawerLoading(true);
+        try {
+            const token = localStorage.getItem('token');
+            const headers = token ? { Authorization: `Bearer ${token}` } : {};
+            let list = [];
+
+            // Primary: fetch students by class endpoint
+            try {
+                const res = await axios.get(`/api/v1/students/class/${classRecord._id}`, { headers });
+                list = res.data.data || [];
+            } catch {
+                // Fallback: fetch all students and filter locally
+                const res = await axios.get('/api/v1/students/', { headers });
+                const all = res.data.data?.students || res.data.data || [];
+                list = all.filter(s => {
+                    const cId = s.classId?._id || s.classId;
+                    return cId === classRecord._id;
+                });
+            }
+
+            // Natural sort by roll number
+            if (Array.isArray(list)) {
+                list.sort((a, b) => {
+                    const numA = parseInt(a.rollNo || a.rollNumber || '0', 10);
+                    const numB = parseInt(b.rollNo || b.rollNumber || '0', 10);
+                    if (!isNaN(numA) && !isNaN(numB) && numA !== numB) {
+                        return numA - numB;
+                    }
+                    return (a.studentName || '').localeCompare(b.studentName || '');
+                });
+            }
+            setDrawerStudents(list);
+        } catch (err) {
+            message.error('Failed to load students: ' + extractErrorMessage(err));
+        } finally {
+            setDrawerLoading(false);
         }
     };
 
@@ -138,6 +192,111 @@ const Classes = () => {
         },
     ];
 
+    // Filtered students for Drawer
+    const filteredDrawerStudents = useMemo(() => {
+        if (!drawerSearchText.trim()) return drawerStudents;
+        const q = drawerSearchText.toLowerCase();
+        return drawerStudents.filter(s =>
+            (s.studentName || '').toLowerCase().includes(q) ||
+            (s.rollNo || s.rollNumber || '').toLowerCase().includes(q) ||
+            (s.userId?.email || '').toLowerCase().includes(q) ||
+            (s.address || '').toLowerCase().includes(q)
+        );
+    }, [drawerStudents, drawerSearchText]);
+
+    // Students drawer columns
+    const studentColumns = [
+        {
+            title: '#',
+            key: 'index',
+            width: 50,
+            align: 'center',
+            render: (_, __, index) => (
+                <span style={{ color: '#8c8c8c', fontSize: 12 }}>{index + 1}</span>
+            ),
+        },
+        {
+            title: 'Roll No',
+            key: 'rollNo',
+            width: 100,
+            sorter: (a, b) => {
+                const numA = parseInt(a.rollNo || a.rollNumber || '0', 10);
+                const numB = parseInt(b.rollNo || b.rollNumber || '0', 10);
+                return numA - numB;
+            },
+            render: (_, record) => {
+                const roll = record.rollNo || record.rollNumber;
+                return roll ? (
+                    <Tag color="blue" icon={<BookOutlined style={{ marginRight: 4 }} />}>
+                        {roll}
+                    </Tag>
+                ) : (
+                    <Text type="secondary">—</Text>
+                );
+            },
+        },
+        {
+            title: 'Student Name',
+            key: 'studentName',
+            sorter: (a, b) => (a.studentName || '').localeCompare(b.studentName || ''),
+            render: (_, record) => (
+                <Space>
+                    <Avatar
+                        size="small"
+                        icon={<UserOutlined />}
+                        style={{ backgroundColor: '#1890ff' }}
+                    />
+                    <div>
+                        <div style={{ fontWeight: 600, color: '#1f1f1f' }}>{record.studentName || '—'}</div>
+                        {record.userId?.email && (
+                            <div style={{ fontSize: 11, color: '#8c8c8c' }}>{record.userId.email}</div>
+                        )}
+                    </div>
+                </Space>
+            ),
+        },
+        {
+            title: 'Date of Joining',
+            key: 'dateOfJoining',
+            width: 130,
+            render: (_, record) => (
+                record.dateOfJoining ? (
+                    <Space size={4}>
+                        <CalendarOutlined style={{ color: '#8c8c8c' }} />
+                        <span>{dayjs(record.dateOfJoining).format('YYYY-MM-DD')}</span>
+                    </Space>
+                ) : <Text type="secondary">—</Text>
+            ),
+        },
+        {
+            title: 'Address',
+            key: 'address',
+            ellipsis: true,
+            render: (_, record) => (
+                record.address ? (
+                    <Tooltip title={record.address}>
+                        <Space size={4}>
+                            <HomeOutlined style={{ color: '#8c8c8c' }} />
+                            <span>{record.address}</span>
+                        </Space>
+                    </Tooltip>
+                ) : <Text type="secondary">—</Text>
+            ),
+        },
+        {
+            title: 'Status',
+            key: 'status',
+            width: 100,
+            render: (_, record) => {
+                const status = record.status || record.userId?.status || 'ACTIVE';
+                const color = status === 'ACTIVE' ? '#52c41a' : status === 'GRADUATED' ? '#722ed1' : '#faad14';
+                return (
+                    <Badge color={color} text={status} />
+                );
+            },
+        },
+    ];
+
     // Table columns
     const columns = [
         {
@@ -145,11 +304,40 @@ const Classes = () => {
             dataIndex: 'name',
             key: 'name',
             sorter: (a, b) => a.name.localeCompare(b.name),
-            render: (name) => (
-                <Space>
-                    <BookOutlined style={{ color: '#1890ff' }} />
-                    <span style={{ fontWeight: 500 }}>{name}</span>
-                </Space>
+            render: (name, record) => (
+                <Tooltip title="Click to view all students in this class">
+                    <span
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            openStudentsDrawer(record);
+                        }}
+                        style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            padding: '4px 10px',
+                            borderRadius: '6px',
+                            background: '#f0f5ff',
+                            border: '1px solid #adc6ff',
+                            color: '#1d39c4',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                        }}
+                        onMouseEnter={(e) => {
+                            e.currentTarget.style.background = '#d6e4ff';
+                            e.currentTarget.style.borderColor = '#85a5ff';
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.background = '#f0f5ff';
+                            e.currentTarget.style.borderColor = '#adc6ff';
+                        }}
+                    >
+                        <BookOutlined style={{ color: '#2f54eb' }} />
+                        <span>{name}</span>
+                        <TeamOutlined style={{ fontSize: 12, color: '#597ef7', marginLeft: 2 }} />
+                    </span>
+                </Tooltip>
             ),
         },
         {
@@ -226,26 +414,49 @@ const Classes = () => {
         {
             title: 'Action',
             key: 'action',
-            width: 120,
+            width: 140,
             render: (_, record) => (
                 <Space size="small">
+                    <Tooltip title="View Students">
+                        <Button
+                            type="primary"
+                            ghost
+                            icon={<TeamOutlined />}
+                            size="small"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                openStudentsDrawer(record);
+                            }}
+                        />
+                    </Tooltip>
                     <Tooltip title="Edit Class">
                         <Button
                             icon={<EditOutlined />}
                             size="small"
-                            onClick={() => handleEdit(record)}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                handleEdit(record);
+                            }}
                         />
                     </Tooltip>
                     <Popconfirm
                         title="Delete Class"
                         description="Are you sure you want to delete this class? This will also affect all students in this class."
-                        onConfirm={() => handleDelete(record._id)}
+                        onConfirm={(e) => {
+                            e?.stopPropagation?.();
+                            handleDelete(record._id);
+                        }}
                         okText="Yes"
                         cancelText="No"
                         okButtonProps={{ danger: true }}
                     >
                         <Tooltip title="Delete Class">
-                            <Button icon={<DeleteOutlined />} size="small" danger />
+                            <Button
+                                icon={<DeleteOutlined />}
+                                size="small"
+                                danger
+                                onClick={(e) => e.stopPropagation()}
+                            />
                         </Tooltip>
                     </Popconfirm>
                 </Space>
@@ -425,6 +636,21 @@ const Classes = () => {
                     pageSizeOptions: ['10', '20', '50', '100'],
                 }}
                 scroll={{ x: 1000 }}
+                onRow={(record) => ({
+                    onClick: (e) => {
+                        // Prevent triggering if clicked inside buttons or popconfirm
+                        if (
+                            e.target.closest('button') ||
+                            e.target.closest('.ant-btn') ||
+                            e.target.closest('.ant-popover') ||
+                            e.target.closest('.ant-popconfirm')
+                        ) {
+                            return;
+                        }
+                        openStudentsDrawer(record);
+                    },
+                    style: { cursor: 'pointer' },
+                })}
             />
 
             {/* Add/Edit Modal */}
@@ -519,6 +745,123 @@ const Classes = () => {
                     </Form.Item>
                 </Form>
             </Modal>
+
+            {/* Students in Class Drawer */}
+            <Drawer
+                title={
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: 16 }}>
+                        <Space size="middle">
+                            <Avatar
+                                shape="square"
+                                size={44}
+                                style={{ backgroundColor: '#1890ff', borderRadius: 8 }}
+                                icon={<BookOutlined style={{ fontSize: 22 }} />}
+                            />
+                            <div>
+                                <div style={{ fontSize: 18, fontWeight: 700, color: '#1f1f1f', lineHeight: 1.3 }}>
+                                    {drawerClass?.name || 'Class Students'}
+                                </div>
+                                <Space size={8} style={{ marginTop: 4 }} wrap>
+                                    <Tag color="blue" icon={<PartitionOutlined />}>
+                                        Section: {drawerClass?.section || '—'}
+                                    </Tag>
+                                    {drawerClass?.academicYear && (
+                                        <Tag color="purple" icon={<CalendarOutlined />}>
+                                            Year: {dayjs(drawerClass.academicYear).format('YYYY')}
+                                        </Tag>
+                                    )}
+                                    {drawerClass?.classTeacherId?.name && (
+                                        <Tag color="cyan" icon={<UserOutlined />}>
+                                            Teacher: {drawerClass.classTeacherId.name}
+                                        </Tag>
+                                    )}
+                                </Space>
+                            </div>
+                        </Space>
+                    </div>
+                }
+                placement="right"
+                width={800}
+                open={drawerOpen}
+                onClose={() => {
+                    setDrawerOpen(false);
+                    setDrawerClass(null);
+                    setDrawerStudents([]);
+                    setDrawerSearchText('');
+                }}
+                destroyOnClose
+            >
+                {/* Stats & Search Toolbar */}
+                <div style={{ marginBottom: 16 }}>
+                    <Row gutter={[12, 12]} align="middle" justify="space-between">
+                        <Col xs={24} sm={14}>
+                            <Space size="middle" wrap>
+                                <Card size="small" style={{ borderRadius: 8, background: '#f0f5ff', border: '1px solid #d6e4ff' }}>
+                                    <Space>
+                                        <TeamOutlined style={{ color: '#1890ff', fontSize: 18 }} />
+                                        <div>
+                                            <div style={{ fontSize: 11, color: '#8c8c8c' }}>Total Enrolled</div>
+                                            <div style={{ fontSize: 18, fontWeight: 700, color: '#1890ff' }}>
+                                                {drawerStudents.length}
+                                            </div>
+                                        </div>
+                                    </Space>
+                                </Card>
+                                <Card size="small" style={{ borderRadius: 8, background: '#f6ffed', border: '1px solid #d9f7be' }}>
+                                    <Space>
+                                        <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 18 }} />
+                                        <div>
+                                            <div style={{ fontSize: 11, color: '#8c8c8c' }}>Active</div>
+                                            <div style={{ fontSize: 18, fontWeight: 700, color: '#52c41a' }}>
+                                                {drawerStudents.filter(s => (s.status || s.userId?.status) === 'ACTIVE').length}
+                                            </div>
+                                        </div>
+                                    </Space>
+                                </Card>
+                            </Space>
+                        </Col>
+                        <Col xs={24} sm={10} style={{ textAlign: 'right' }}>
+                            <Input
+                                placeholder="Search by name, roll no, email..."
+                                prefix={<SearchOutlined style={{ color: '#bfbfbf' }} />}
+                                value={drawerSearchText}
+                                onChange={(e) => setDrawerSearchText(e.target.value)}
+                                allowClear
+                                style={{ width: '100%', borderRadius: 6 }}
+                            />
+                        </Col>
+                    </Row>
+                </div>
+
+                {drawerLoading ? (
+                    <div style={{ textAlign: 'center', padding: '60px 0' }}>
+                        <Spin size="large" tip="Loading enrolled students..." />
+                    </div>
+                ) : filteredDrawerStudents.length === 0 ? (
+                    <div style={{ padding: '40px 0', textAlign: 'center' }}>
+                        <Empty
+                            description={
+                                drawerSearchText
+                                    ? `No students matching "${drawerSearchText}"`
+                                    : `No students enrolled in ${drawerClass?.name || 'this class'} yet.`
+                            }
+                        />
+                    </div>
+                ) : (
+                    <Table
+                        columns={studentColumns}
+                        dataSource={filteredDrawerStudents}
+                        rowKey="_id"
+                        pagination={{
+                            pageSize: 10,
+                            showSizeChanger: true,
+                            pageSizeOptions: ['10', '25', '50', '100'],
+                            showTotal: (total) => `Total ${total} student${total === 1 ? '' : 's'}`,
+                        }}
+                        size="middle"
+                    />
+                )}
+            </Drawer>
         </div>
     );
 };
