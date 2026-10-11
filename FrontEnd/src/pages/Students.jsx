@@ -192,6 +192,17 @@ const Students = () => {
             ),
         },
         {
+            title: 'Date of Birth',
+            key: 'dateOfBirth',
+            render: (_, record) => (
+                <Space>
+                    <CalendarOutlined style={{ color: '#8c8c8c' }} />
+                    <span>{record.dateOfBirth ? dayjs(record.dateOfBirth).format('YYYY-MM-DD') : '-'}</span>
+                </Space>
+            ),
+            sorter: (a, b) => new Date(a.dateOfBirth || 0) - new Date(b.dateOfBirth || 0),
+        },
+        {
             title: 'Date of Joining',
             key: 'dateOfJoining',
             render: (_, record) => (
@@ -263,6 +274,9 @@ const Students = () => {
             studentName: record.studentName,
             address: record.address,
             classId: record.classId?._id,
+            dateOfBirth: record.dateOfBirth
+                ? dayjs(record.dateOfBirth).format('YYYY-MM-DD')
+                : '',
             dateOfJoining: record.dateOfJoining
                 ? dayjs(record.dateOfJoining).format('YYYY-MM-DD')
                 : '',
@@ -297,6 +311,7 @@ const Students = () => {
                     rollNo: values.rollNo,
                     studentName: values.studentName,
                     address: values.address,
+                    dateOfBirth: values.dateOfBirth,
                     classId: values.classId,
                     dateOfJoining: values.dateOfJoining,
                 };
@@ -314,6 +329,7 @@ const Students = () => {
                     rollNo: values.rollNo,
                     studentName: values.studentName,
                     address: values.address,
+                    dateOfBirth: values.dateOfBirth,
                     classId: values.classId,
                     dateOfJoining: values.dateOfJoining,
                     status: values.status || 'ACTIVE',
@@ -339,6 +355,29 @@ const Students = () => {
 
     const clearSearch = () => {
         setSearchText('');
+    };
+
+    const handleClassChange = (selectedClassId) => {
+        if (!selectedClassId || editingStudent) return;
+
+        // Only consider ACTIVE students for the next roll number calculation
+        const activeStudentsInClass = students.filter(s => {
+            const isSameClass = (s.classId?._id || s.classId) === selectedClassId;
+            const currentStatus = s.status || s.userId?.status || 'ACTIVE';
+            return isSameClass && currentStatus === 'ACTIVE';
+        });
+        
+        let maxRoll = 0;
+        activeStudentsInClass.forEach(s => {
+            const num = parseInt(s.rollNo, 10);
+            if (!isNaN(num) && num > maxRoll) {
+                maxRoll = num;
+            }
+        });
+
+        const nextRoll = maxRoll + 1;
+        const formattedRoll = nextRoll < 10 ? `0${nextRoll}` : `${nextRoll}`;
+        form.setFieldsValue({ rollNo: formattedRoll });
     };
 
     return (
@@ -471,14 +510,36 @@ const Students = () => {
             >
                 <Form layout="vertical" onFinish={handleSave} form={form} autoComplete="off">
                     <Form.Item
+                        name="classId"
+                        label="Class"
+                        rules={[{ required: true, message: 'Please select a class' }]}
+                    >
+                        <Select 
+                            placeholder="Select a class" 
+                            loading={classes.length === 0}
+                            showSearch
+                            optionFilterProp="children"
+                            size="large"
+                            onChange={handleClassChange}
+                        >
+                            {classes.map((cls) => (
+                                <Option key={cls._id} value={cls._id}>
+                                    <BookOutlined /> {cls.name}
+                                </Option>
+                            ))}
+                        </Select>
+                    </Form.Item>
+
+                    <Form.Item
                         name="rollNo"
                         label="Roll Number"
                         rules={[{ required: true, message: 'Please enter roll number' }]}
                     >
                         <Input 
-                            placeholder="e.g. 2024-CS-001" 
+                            placeholder="Automatically generated" 
                             size="large"
                             prefix={<BookOutlined style={{ color: '#8c8c8c' }} />}
+                            disabled
                         />
                     </Form.Item>
 
@@ -528,28 +589,20 @@ const Students = () => {
                         </>
                     )}
 
-                    <Form.Item
-                        name="classId"
-                        label="Class"
-                        rules={[{ required: true, message: 'Please select a class' }]}
-                    >
-                        <Select 
-                            placeholder="Select a class" 
-                            loading={classes.length === 0}
-                            showSearch
-                            optionFilterProp="children"
-                            size="large"
-                        >
-                            {classes.map((cls) => (
-                                <Option key={cls._id} value={cls._id}>
-                                    <BookOutlined /> {cls.name}
-                                </Option>
-                            ))}
-                        </Select>
-                    </Form.Item>
-
                     <Form.Item name="address" label="Address">
                         <Input.TextArea rows={2} placeholder="Enter student address" />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="dateOfBirth"
+                        label="Date of Birth"
+                        rules={[{ required: false, message: 'Please enter date of birth' }]}
+                    >
+                        <Input 
+                            type="date" 
+                            size="large"
+                            prefix={<CalendarOutlined style={{ color: '#8c8c8c' }} />}
+                        />
                     </Form.Item>
 
                     <Form.Item

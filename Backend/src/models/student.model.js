@@ -28,6 +28,10 @@ const studentSchema = new Schema(
             type: String,
             trim: true,
         },
+        dateOfBirth: {
+            type: Date,
+            required: false,
+        },
         dateOfJoining: {
             type: Date,
             required: true,
@@ -63,7 +67,10 @@ const studentSchema = new Schema(
     { timestamps: true }
 );
 
-// rollNo unique per organization
-studentSchema.index({ organizationId: 1, rollNo: 1 }, { unique: true });
+// rollNo unique per organization and class for ACTIVE students
+studentSchema.index(
+    { organizationId: 1, classId: 1, rollNo: 1 },
+    { unique: true, partialFilterExpression: { status: "ACTIVE" } }
+);
 
 export const Student = mongoose.model("Student", studentSchema);

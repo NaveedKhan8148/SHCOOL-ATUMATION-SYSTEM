@@ -8,7 +8,7 @@ import { AcademicSession } from "../models/academicSession.model.js";
 
 // POST /api/v1/students/
 const createStudent = asyncHandler(async (req, res) => {
-    const { email, password, rollNo, status, studentName, address, dateOfJoining, classId } = req.body;
+    const { email, password, rollNo, status, studentName, address, dateOfBirth, dateOfJoining, classId } = req.body;
     const organizationId = req.user.organizationId;
 
     if ([email, password, rollNo, studentName, dateOfJoining, classId].some((f) => !f?.toString().trim())) {
@@ -17,6 +17,9 @@ const createStudent = asyncHandler(async (req, res) => {
 
     const existingUser = await User.findOne({ organizationId, email: email.toLowerCase().trim() });
     if (existingUser) throw new ApiError(409, "Email already registered in this organization");
+
+    const existingRoll = await Student.findOne({ organizationId, classId, rollNo, status: "ACTIVE" });
+    if (existingRoll) throw new ApiError(409, "Roll number already exists among active students in this class");
 
     const user = await User.create({ organizationId, email, password, role: "STUDENT" });
 
@@ -27,6 +30,7 @@ const createStudent = asyncHandler(async (req, res) => {
         studentName,
         status,
         address,
+        dateOfBirth: dateOfBirth || null,
         dateOfJoining,
         classId,
     });
@@ -61,11 +65,14 @@ const getStudentsByClass = asyncHandler(async (req, res) => {
 
 // PATCH /api/v1/students/:id
 const updateStudent = asyncHandler(async (req, res) => {
-    const { rollNo, status, studentName, address, dateOfJoining, classId } = req.body;
+    const { rollNo, status, studentName, address, dateOfBirth, dateOfJoining, classId } = req.body;
+
+    const existingRoll = await Student.findOne({ organizationId: req.user.organizationId, classId, rollNo, status: "ACTIVE", _id: { $ne: req.params.id } });
+    if (existingRoll) throw new ApiError(409, "Roll number already exists among active students in this class");
 
     const student = await Student.findOneAndUpdate(
         { _id: req.params.id, organizationId: req.user.organizationId },
-        { $set: { rollNo, status, studentName, address, dateOfJoining, classId } },
+        { $set: { rollNo, status, studentName, address, dateOfBirth: dateOfBirth || null, dateOfJoining, classId } },
         { new: true, runValidators: true }
     );
 
