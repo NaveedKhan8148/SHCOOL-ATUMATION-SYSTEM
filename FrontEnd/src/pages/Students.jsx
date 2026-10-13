@@ -85,46 +85,56 @@ const Students = () => {
         }
     };
 
-    // Filter students based on search
+    // GRADUATED_STATUSES — treated as alumni; excluded from active lists
+    const GRADUATED_STATUSES = ['GRADUATED', 'ALUMNI'];
+
+    // Separate active from graduated in local state (backend already filters,
+    // but guard defensively on the frontend too)
+    const activeStudents = students.filter(
+        (s) => !GRADUATED_STATUSES.includes(s.status)
+    );
+
+    // Filter active students based on search
     const filteredStudents = useMemo(() => {
-        if (!searchText) return students;
-        
-        return students.filter((record) =>
+        if (!searchText) return activeStudents;
+
+        return activeStudents.filter((record) =>
             (record.studentName || '').toLowerCase().includes(searchText.toLowerCase()) ||
             (record.rollNo || '').toLowerCase().includes(searchText.toLowerCase()) ||
             (record.userId?.email || '').toLowerCase().includes(searchText.toLowerCase())
         );
-    }, [students, searchText]);
+    }, [activeStudents, searchText]);
 
     // Stats
-    const totalStudents = students.length;
-    const inactiveStudents = students.filter(
+    // Stats — operate only on non-graduated students
+    const totalActiveStudents = activeStudents.length;
+    const inactiveStudents = activeStudents.filter(
         (student) => student.status === 'INACTIVE' || student.userId?.status === 'INACTIVE'
     ).length;
-    const activeStudents = totalStudents - inactiveStudents;
+    const currentlyActive = totalActiveStudents - inactiveStudents;
 
-    // Stats Cards (removed hardcoded fee and attendance data)
+    // Stats Cards
     const statsCards = [
-        { 
-            title: 'Total Students', 
-            value: totalStudents, 
-            color: '#1890ff', 
+        {
+            title: 'Total Students',
+            value: totalActiveStudents,
+            color: '#1890ff',
             bgColor: '#e6f7ff',
             icon: <TeamOutlined />,
-            subtitle: 'Enrolled students'
+            subtitle: 'Enrolled (excl. graduated)'
         },
-        { 
-            title: 'Active Students', 
-            value: activeStudents, 
-            color: '#52c41a', 
+        {
+            title: 'Active Students',
+            value: currentlyActive,
+            color: '#52c41a',
             bgColor: '#f6ffed',
             icon: <CheckCircleOutlined />,
             subtitle: 'Currently active'
         },
-        { 
-            title: 'Inactive Students', 
-            value: inactiveStudents, 
-            color: '#ff4d4f', 
+        {
+            title: 'Inactive Students',
+            value: inactiveStudents,
+            color: '#ff4d4f',
             bgColor: '#fff2f0',
             icon: <CloseCircleOutlined />,
             subtitle: 'Inactive accounts'
@@ -218,9 +228,17 @@ const Students = () => {
             key: 'status',
             render: (_, record) => {
                 const status = record.status || record.userId?.status || 'ACTIVE';
+                const colorMap = {
+                    ACTIVE: '#52c41a',
+                    INACTIVE: '#ff4d4f',
+                    GRADUATED: '#722ed1',
+                    ALUMNI: '#722ed1',
+                    PROMOTED: '#1890ff',
+                    RETAINED: '#faad14',
+                };
                 return (
-                    <Badge 
-                        color={status === 'ACTIVE' ? '#52c41a' : '#ff4d4f'}
+                    <Badge
+                        color={colorMap[status] || '#8c8c8c'}
                         text={status}
                     />
                 );
@@ -228,6 +246,8 @@ const Students = () => {
             filters: [
                 { text: 'Active', value: 'ACTIVE' },
                 { text: 'Inactive', value: 'INACTIVE' },
+                { text: 'Promoted', value: 'PROMOTED' },
+                { text: 'Retained', value: 'RETAINED' },
             ],
             onFilter: (value, record) => {
                 const status = record.status || record.userId?.status || 'ACTIVE';
@@ -360,13 +380,14 @@ const Students = () => {
     const handleClassChange = (selectedClassId) => {
         if (!selectedClassId || editingStudent) return;
 
-        // Only consider ACTIVE students for the next roll number calculation
+        // Only consider ACTIVE (non-graduated) students for the next roll number calculation
+        const GRADUATED_STATUSES = ['GRADUATED', 'ALUMNI'];
         const activeStudentsInClass = students.filter(s => {
             const isSameClass = (s.classId?._id || s.classId) === selectedClassId;
-            const currentStatus = s.status || s.userId?.status || 'ACTIVE';
-            return isSameClass && currentStatus === 'ACTIVE';
+            const status = s.status || s.userId?.status || 'ACTIVE';
+            return isSameClass && !GRADUATED_STATUSES.includes(status) && status !== 'INACTIVE';
         });
-        
+
         let maxRoll = 0;
         activeStudentsInClass.forEach(s => {
             const num = parseInt(s.rollNo, 10);

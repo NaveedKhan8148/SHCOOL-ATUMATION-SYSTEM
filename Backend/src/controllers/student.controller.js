@@ -39,8 +39,15 @@ const createStudent = asyncHandler(async (req, res) => {
 });
 
 // GET /api/v1/students/
+// By default excludes GRADUATED and ALUMNI students (active roster only).
+// Pass ?includeGraduated=true to include them (for historical/audit views).
 const getAllStudents = asyncHandler(async (req, res) => {
-    const students = await Student.find({ organizationId: req.user.organizationId })
+    const includeGraduated = req.query.includeGraduated === 'true';
+    const query = { organizationId: req.user.organizationId };
+    if (!includeGraduated) {
+        query.status = { $nin: ['GRADUATED', 'ALUMNI'] };
+    }
+    const students = await Student.find(query)
         .populate("userId", "-password -refreshToken")
         .populate("classId", "name");
     return res.status(200).json(new ApiResponse(200, students, "Students fetched"));
@@ -56,10 +63,18 @@ const getStudentById = asyncHandler(async (req, res) => {
 });
 
 // GET /api/v1/students/class/:classId
+// By default excludes GRADUATED and ALUMNI students.
+// Pass ?includeGraduated=true to include them.
 const getStudentsByClass = asyncHandler(async (req, res) => {
-    const students = await Student.find({ organizationId: req.user.organizationId, classId: req.params.classId })
+    const includeGraduated = req.query.includeGraduated === 'true';
+    const query = { organizationId: req.user.organizationId, classId: req.params.classId };
+    if (!includeGraduated) {
+        query.status = { $nin: ['GRADUATED', 'ALUMNI'] };
+    }
+    const students = await Student.find(query)
         .populate("userId", "-password -refreshToken")
-        .populate("classId", "name");
+        .populate("classId", "name")
+        .sort({ rollNo: 1 });
     return res.status(200).json(new ApiResponse(200, students, "Students fetched for class"));
 });
 

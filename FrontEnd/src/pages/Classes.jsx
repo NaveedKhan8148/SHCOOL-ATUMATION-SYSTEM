@@ -84,6 +84,8 @@ const Classes = () => {
         }
     };
 
+    const GRADUATED_STATUSES = ['GRADUATED', 'ALUMNI'];
+
     const openStudentsDrawer = async (classRecord) => {
         setDrawerClass(classRecord);
         setDrawerOpen(true);
@@ -95,12 +97,12 @@ const Classes = () => {
             const headers = token ? { Authorization: `Bearer ${token}` } : {};
             let list = [];
 
-            // Primary: fetch students by class endpoint
+            // Primary: fetch active students by class (backend excludes GRADUATED/ALUMNI by default)
             try {
                 const res = await axios.get(`/api/v1/students/class/${classRecord._id}`, { headers });
                 list = res.data.data || [];
             } catch {
-                // Fallback: fetch all students and filter locally
+                // Fallback: fetch all active students and filter locally
                 const res = await axios.get('/api/v1/students/', { headers });
                 const all = res.data.data?.students || res.data.data || [];
                 list = all.filter(s => {
@@ -108,6 +110,9 @@ const Classes = () => {
                     return cId === classRecord._id;
                 });
             }
+
+            // Guard: also exclude graduated on the frontend side
+            list = list.filter(s => !GRADUATED_STATUSES.includes(s.status));
 
             // Natural sort by roll number
             if (Array.isArray(list)) {
