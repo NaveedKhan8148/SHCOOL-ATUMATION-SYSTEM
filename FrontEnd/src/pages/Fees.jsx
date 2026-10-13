@@ -10,7 +10,7 @@ import {
     DollarOutlined, ClockCircleOutlined, WarningOutlined,
     UserOutlined, FileTextOutlined, SaveOutlined, SearchOutlined,
     MinusCircleOutlined, DollarCircleOutlined, BankOutlined, CheckCircleOutlined,
-    CarOutlined, FundOutlined, PieChartOutlined, RiseOutlined, CloseCircleOutlined
+    CarOutlined, FundOutlined, PieChartOutlined, RiseOutlined, CloseCircleOutlined, DownloadOutlined
 } from '@ant-design/icons';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -45,6 +45,8 @@ const Fees = () => {
     const [tuitionError, setTuitionError] = useState('');
     const [transportError, setTransportError] = useState('');
     const [classFilter, setClassFilter] = useState('');
+    const [monthFilter, setMonthFilter] = useState('');
+    const [bulkDownloading, setBulkDownloading] = useState(false);
 
     const extractErrorMessage = (error) => {
         if (error.response?.data?.message) return error.response.data.message;
@@ -567,6 +569,362 @@ const Fees = () => {
         const prefix = isReceipt && remainingAmount === 0 ? 'FeeReceipt' : 'FeeVoucher';
         doc.save(`${prefix}_${record.voucherNo || record._id}.pdf`);
         message.success(`${isReceipt ? 'Official Fee Receipt' : 'Official Fee Voucher'} PDF generated successfully!`);
+    };
+
+    // Available fee months for the bulk download selector
+    const availableMonths = useMemo(() => {
+        const months = new Set();
+        fees.forEach(f => {
+            if (f.feeMonth) months.add(f.feeMonth);
+        });
+        return Array.from(months).sort((a, b) => {
+            const da = new Date(a);
+            const db = new Date(b);
+            if (!isNaN(da) && !isNaN(db)) return db - da;
+            return a.localeCompare(b);
+        });
+    }, [fees]);
+
+    // Bulk Download: Generate combined PDF with two vouchers per page (side by side)
+    const generateBulkVoucherPDF = () => {
+        if (!classFilter) {
+            message.warning('Please select a class first to download class vouchers.');
+            return;
+        }
+        if (!monthFilter) {
+            message.warning('Please select a fee month to download class vouchers.');
+            return;
+        }
+
+        // Find all fee records matching selected class + month
+        const matchingVouchers = fees.filter(f => {
+            if (!f.studentId) return false;
+            const student = typeof f.studentId === 'object' ? f.studentId : null;
+            if (!student) return false;
+            const studentClassId = student.classId?._id || student.classId;
+            return studentClassId === classFilter && f.feeMonth === monthFilter;
+        });
+
+        if (matchingVouchers.length === 0) {
+            message.warning('No fee vouchers found for the selected class and month.');
+            return;
+        }
+
+        setBulkDownloading(true);
+
+        try {
+            const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+            const pageH = 297;
+            const colW = 99;
+            const leftColX = 3;
+            const rightColX = 108;
+            const cutLineX = 105;
+
+            const schoolTitle = (organizationName && organizationName.trim())
+                ? organizationName.trim().toUpperCase()
+                : (typeof window !== 'undefined' && localStorage.getItem('organizationName')
+                    ? localStorage.getItem('organizationName').trim().toUpperCase()
+                    : 'SCHOOL AUTOMATION SYSTEM');
+
+            // Sort vouchers by student roll number
+            matchingVouchers.sort((a, b) => {
+                const rollA = a.studentId?.rollNo || '';
+                const rollB = b.studentId?.rollNo || '';
+                return rollA.localeCompare(rollB, undefined, { numeric: true });
+            });
+
+            // ──────────────────────────────────────────────────
+            // Draw a single voucher inside a half-page column
+            // ──────────────────────────────────────────────────
+            const drawVoucher = (record, colX) => {
+                const m = 3;
+                const lm = colX + m;
+                const rm = colX + colW - m;
+                const cx = colX + colW / 2;
+                const uw = colW - 2 * m; // 93mm usable width
+                const mRight = 210 - rm; // right margin for autoTable
+
+                const student = (record.studentId && typeof record.studentId === 'object' && record.studentId.studentName)
+                    ? record.studentId : {};
+
+                // ── Class name extraction ──
+                let className = '-';
+                if (student.classId && typeof student.classId === 'object' && student.classId.name) {
+                    className = `${student.classId.name}${student.classId.section ? ` (${student.classId.section})` : ''}`;
+                } else if (student.classId && typeof student.classId === 'string') {
+                    const foundCls = classes.find(c => c._id === student.classId);
+                    className = foundCls ? `${foundCls.name}${foundCls.section ? ` (${foundCls.section})` : ''}` : '-';
+                }
+
+                // ── Fee calculations (mirrors existing single-voucher logic) ──
+                let rawTuitionTotal = 0;
+                let rawTransportTotal = 0;
+                const feeHeadsList = record.feeHeads && record.feeHeads.length > 0 ? record.feeHeads : [];
+                if (feeHeadsList.length > 0) {
+                    feeHeadsList.forEach(h => {
+                        const name = (h.headName || '').toLowerCase();
+                        const amt = Number(h.amount) || 0;
+                        if (name.includes('transport')) rawTransportTotal += amt;
+                        else rawTuitionTotal += amt;
+                    });
+                } else {
+                    rawTuitionTotal = Number(record.subTotal || record.netPayable || 0);
+                }
+                const concession = Number(record.totalConcession || 0);
+                const tuitionFee = Math.max(0, rawTuitionTotal - concession);
+                const transportFee = rawTransportTotal;
+                const totalFee = Number(record.netPayable !== undefined ? record.netPayable : ((rawTuitionTotal + rawTransportTotal) - concession));
+                const totalPaid = Number(record.paidAmount || 0);
+                const remainingAmount = Math.max(0, totalFee - totalPaid);
+                const tuitionPaid = Number(record.academicPaid || 0);
+                const transportPaid = Number(record.transportPaid || 0);
+                const statusText = remainingAmount === 0 && totalFee > 0 ? 'PAID' : (totalPaid > 0 ? 'PARTIAL' : (record.status || 'PENDING'));
+
+                let docTitle = 'STUDENT FEE VOUCHER';
+                if (statusText === 'PAID') docTitle = 'FEE PAYMENT RECEIPT';
+                else if (statusText === 'PARTIAL') docTitle = 'FEE VOUCHER & RECEIPT';
+
+                // ═══ 1. Header Band ═══
+                doc.setFillColor(24, 144, 255);
+                doc.rect(colX, 4, colW, 18, 'F');
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(8.5);
+                doc.setTextColor(255, 255, 255);
+                doc.text(schoolTitle, cx, 11, { align: 'center', maxWidth: uw - 4 });
+                doc.setFontSize(6);
+                doc.text(docTitle, cx, 16, { align: 'center' });
+                doc.setFontSize(4.5);
+                doc.setFont('helvetica', 'normal');
+                doc.text('Official Fee Document', cx, 20, { align: 'center' });
+
+                // ═══ 2. Voucher Meta ═══
+                let y = 26;
+                doc.setTextColor(50, 50, 50);
+                doc.setFontSize(5.5);
+
+                doc.setFont('helvetica', 'bold');
+                doc.text('Voucher No:', lm, y);
+                doc.setFont('helvetica', 'normal');
+                const vNo = record.voucherNo || (record._id ? String(record._id).substring(0, 10) : '-');
+                doc.text(vNo, lm + 15, y);
+
+                doc.setFont('helvetica', 'bold');
+                doc.text('Date:', cx + 2, y);
+                doc.setFont('helvetica', 'normal');
+                doc.text(dayjs(record.createdAt).format('DD MMM YYYY'), cx + 11, y);
+
+                y += 5;
+                doc.setFont('helvetica', 'bold');
+                doc.text('Fee Month:', lm, y);
+                doc.setFont('helvetica', 'normal');
+                doc.text(record.feeMonth || '-', lm + 15, y);
+
+                doc.setFont('helvetica', 'bold');
+                doc.text('Due:', cx + 2, y);
+                doc.setFont('helvetica', 'normal');
+                doc.text(dayjs(record.dueDate).format('DD MMM YYYY'), cx + 11, y);
+
+                // ═══ 3. Student Info Card ═══
+                y += 4;
+                doc.setDrawColor(215, 220, 228);
+                doc.setFillColor(248, 250, 252);
+                doc.roundedRect(lm, y, uw, 18, 1.5, 1.5, 'FD');
+
+                doc.setTextColor(30, 30, 30);
+                doc.setFontSize(5.5);
+                doc.setFont('helvetica', 'bold');
+                doc.text(`Student:  ${student.studentName || '-'}`, lm + 2, y + 5);
+                doc.setFont('helvetica', 'normal');
+                doc.text(`Roll No:  ${student.rollNo || '-'}`, lm + 2, y + 10);
+                doc.text(`Class:    ${className}`, lm + 2, y + 15);
+
+                // Status badge (top-right of card)
+                const badgeW = 22;
+                const badgeX = rm - badgeW - 1;
+                if (statusText === 'PAID') doc.setFillColor(82, 196, 26);
+                else if (statusText === 'PARTIAL') doc.setFillColor(250, 140, 22);
+                else doc.setFillColor(255, 77, 79);
+                doc.roundedRect(badgeX, y + 2, badgeW, 6, 1.5, 1.5, 'F');
+                doc.setTextColor(255, 255, 255);
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(5);
+                doc.text(statusText, badgeX + badgeW / 2, y + 6, { align: 'center' });
+
+                doc.setFontSize(4.5);
+                doc.setFont('helvetica', 'normal');
+                if (statusText === 'PAID') {
+                    doc.setTextColor(82, 196, 26);
+                    doc.text('Fully Paid', badgeX + badgeW / 2, y + 13, { align: 'center' });
+                } else {
+                    doc.setTextColor(217, 83, 79);
+                    doc.text(`Rem: Rs ${remainingAmount.toLocaleString()}`, badgeX + badgeW / 2, y + 13, { align: 'center' });
+                }
+
+                // ═══ 4. Fee Heads Table ═══
+                y += 21;
+                const feeHeadsRows = feeHeadsList.length > 0
+                    ? feeHeadsList.map(h => [h.headName, `Rs ${Number(h.amount).toLocaleString()}`])
+                    : [
+                        ['Tuition Fee', `Rs ${tuitionFee.toLocaleString()}`],
+                        ['Transport Fee', `Rs ${transportFee.toLocaleString()}`]
+                    ];
+
+                autoTable(doc, {
+                    startY: y,
+                    head: [['Fee Head', 'Amount (PKR)']],
+                    body: feeHeadsRows,
+                    theme: 'grid',
+                    headStyles: { fillColor: [24, 144, 255], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 5.5, cellPadding: 1.5 },
+                    bodyStyles: { fontSize: 5, textColor: [40, 40, 40], cellPadding: 1.5 },
+                    columnStyles: { 0: { cellWidth: uw * 0.65 }, 1: { cellWidth: uw * 0.35, halign: 'right' } },
+                    margin: { left: lm, right: mRight }
+                });
+                y = doc.lastAutoTable.finalY + 3;
+
+                // ═══ 5. Financial Summary Table ═══
+                const summaryRows = [];
+                summaryRows.push(['Tuition Fee', `Rs ${tuitionFee.toLocaleString()}`]);
+                summaryRows.push(['Transport Fee', `Rs ${transportFee.toLocaleString()}`]);
+                if (concession > 0) {
+                    summaryRows.push(['Discount / Concession', `- Rs ${concession.toLocaleString()}`]);
+                }
+                summaryRows.push([
+                    { content: 'Total Fee', styles: { fontStyle: 'bold', textColor: [20, 20, 20] } },
+                    { content: `Rs ${totalFee.toLocaleString()}`, styles: { fontStyle: 'bold', halign: 'right', textColor: [20, 20, 20] } }
+                ]);
+                summaryRows.push(['Amount Paid', `Rs ${totalPaid.toLocaleString()}`]);
+
+                const isFullyPaid = remainingAmount === 0 && totalFee > 0;
+                summaryRows.push([
+                    { content: isFullyPaid ? 'Remaining' : 'Remaining / Payable', styles: { fontStyle: 'bold', fontSize: 5.5, textColor: isFullyPaid ? [38, 154, 76] : [200, 30, 30], fillColor: isFullyPaid ? [240, 250, 240] : [255, 242, 235] } },
+                    { content: isFullyPaid ? 'Rs 0 (PAID)' : `Rs ${remainingAmount.toLocaleString()}`, styles: { fontStyle: 'bold', fontSize: 5.5, halign: 'right', textColor: isFullyPaid ? [38, 154, 76] : [200, 30, 30], fillColor: isFullyPaid ? [240, 250, 240] : [255, 242, 235] } }
+                ]);
+
+                autoTable(doc, {
+                    startY: y,
+                    head: [['Fee Summary', 'Amount']],
+                    body: summaryRows,
+                    theme: 'grid',
+                    headStyles: { fillColor: [44, 62, 80], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 5.5, cellPadding: 1.5 },
+                    bodyStyles: { fontSize: 5, textColor: [40, 40, 40], cellPadding: 1.5 },
+                    columnStyles: { 0: { cellWidth: uw * 0.65 }, 1: { cellWidth: uw * 0.35, halign: 'right' } },
+                    margin: { left: lm, right: mRight }
+                });
+                y = doc.lastAutoTable.finalY + 3;
+
+                // ═══ 6. Payment Details Box ═══
+                const payBoxH = totalPaid > 0 ? 26 : 14;
+                doc.setDrawColor(215, 220, 228);
+                doc.setFillColor(250, 251, 253);
+                doc.roundedRect(lm, y, uw, payBoxH, 1.5, 1.5, 'FD');
+
+                doc.setFillColor(235, 242, 250);
+                doc.roundedRect(lm, y, uw, 5, 1.5, 1.5, 'F');
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(5);
+                doc.setTextColor(24, 144, 255);
+                doc.text('PAYMENT DETAILS', lm + 2, y + 3.5);
+
+                let py = y + 8;
+                doc.setFontSize(5);
+                doc.setTextColor(50, 50, 50);
+
+                if (totalPaid > 0) {
+                    doc.setFont('helvetica', 'bold');
+                    doc.text('Status:', lm + 2, py);
+                    doc.setFont('helvetica', 'normal');
+                    doc.text(statusText === 'PAID' ? 'Fully Paid' : 'Partially Paid', lm + 12, py);
+                    py += 4;
+                    doc.setFont('helvetica', 'bold');
+                    doc.text('Tuition Paid:', lm + 2, py);
+                    doc.setFont('helvetica', 'normal');
+                    doc.text(`Rs ${tuitionPaid.toLocaleString()}`, lm + 18, py);
+                    doc.setFont('helvetica', 'bold');
+                    doc.text('Transport Paid:', cx - 4, py);
+                    doc.setFont('helvetica', 'normal');
+                    doc.text(`Rs ${transportPaid.toLocaleString()}`, cx + 14, py);
+                    py += 4;
+                    doc.setFont('helvetica', 'bold');
+                    doc.text('Mode:', lm + 2, py);
+                    doc.setFont('helvetica', 'normal');
+                    doc.text(record.paymentMethod || 'CASH', lm + 12, py);
+                    doc.setFont('helvetica', 'bold');
+                    doc.text('Date:', cx - 4, py);
+                    doc.setFont('helvetica', 'normal');
+                    doc.text(record.paidDate ? dayjs(record.paidDate).format('DD MMM YY') : '-', cx + 6, py);
+                    py += 4;
+                    doc.setFont('helvetica', 'bold');
+                    doc.text('Received By:', lm + 2, py);
+                    doc.setFont('helvetica', 'normal');
+                    doc.text(record.receivedBy || 'Accounts Officer', lm + 18, py);
+                } else {
+                    doc.setFont('helvetica', 'normal');
+                    doc.setTextColor(235, 47, 6);
+                    doc.text('UNPAID - No payment recorded', lm + 2, py);
+                    doc.setTextColor(50, 50, 50);
+                    py += 4;
+                    doc.text(`Due: ${dayjs(record.dueDate).format('DD MMM YYYY')}`, lm + 2, py);
+                }
+
+                y += payBoxH + 3;
+
+                // ═══ 7. Footer Note ═══
+                doc.setFontSize(4);
+                doc.setFont('helvetica', 'italic');
+                doc.setTextColor(110, 110, 110);
+                doc.text('Note: Retain this voucher. Dues must be settled before the due date.', lm, y + 2, { maxWidth: uw });
+
+                // ═══ 8. Signatures ═══
+                const sigY = y + 10;
+                doc.setDrawColor(180, 180, 180);
+                doc.line(lm, sigY, lm + uw * 0.38, sigY);
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(4.5);
+                doc.setTextColor(60, 60, 60);
+                doc.text('Parent / Guardian', lm + 2, sigY + 3.5);
+
+                doc.line(rm - uw * 0.38, sigY, rm, sigY);
+                doc.text('Cashier / Accounts', rm - uw * 0.38 + 2, sigY + 3.5);
+            };
+
+            // ── Generate pages: 2 vouchers per page ──
+            for (let i = 0; i < matchingVouchers.length; i += 2) {
+                if (i > 0) doc.addPage();
+
+                // Dashed vertical cut line down the centre
+                doc.setDrawColor(180, 180, 180);
+                doc.setLineWidth(0.3);
+                for (let ly = 3; ly < pageH - 3; ly += 4) {
+                    doc.line(cutLineX, ly, cutLineX, Math.min(ly + 2, pageH - 3));
+                }
+                doc.setLineWidth(0.2);
+
+                // Scissors icon at top of cut line
+                doc.setFontSize(7);
+                doc.setTextColor(160, 160, 160);
+                doc.text('\u2702', cutLineX - 2, 3);
+
+                // Left voucher
+                drawVoucher(matchingVouchers[i], leftColX);
+
+                // Right voucher (if exists — odd count leaves right empty)
+                if (i + 1 < matchingVouchers.length) {
+                    drawVoucher(matchingVouchers[i + 1], rightColX);
+                }
+            }
+
+            // Save PDF with descriptive filename
+            const cls = classes.find(c => c._id === classFilter);
+            const clsName = cls ? cls.name.replace(/[^a-zA-Z0-9]/g, '_') : 'Class';
+            const monthName = monthFilter.replace(/\s+/g, '_');
+            doc.save(`Fee_Vouchers_${clsName}_${monthName}.pdf`);
+            message.success(`Bulk PDF generated: ${matchingVouchers.length} voucher(s) for ${cls?.name || 'class'} — ${monthFilter}`);
+        } catch (err) {
+            console.error('Bulk PDF generation error:', err);
+            message.error('Failed to generate bulk voucher PDF. Please try again.');
+        } finally {
+            setBulkDownloading(false);
+        }
     };
 
     // Open Voucher Creation Modal
@@ -1202,6 +1560,34 @@ const Fees = () => {
                                 <Option value="PARTIAL">PARTIAL</Option>
                                 <Option value="OVERDUE">OVERDUE</Option>
                             </Select>
+                            <Select
+                                placeholder="Fee Month"
+                                value={monthFilter || undefined}
+                                onChange={val => setMonthFilter(val || '')}
+                                style={{ width: '180px' }}
+                                allowClear
+                                showSearch
+                                filterOption={(input, option) =>
+                                    option.children.toLowerCase().includes(input.toLowerCase())
+                                }
+                            >
+                                {availableMonths.map(m => (
+                                    <Option key={m} value={m}>{m}</Option>
+                                ))}
+                            </Select>
+                            <Tooltip title={!classFilter ? 'Select a class first' : !monthFilter ? 'Select a fee month first' : `Download all vouchers for ${monthFilter}`}>
+                                <Button
+                                    icon={<DownloadOutlined />}
+                                    loading={bulkDownloading}
+                                    disabled={!classFilter || !monthFilter}
+                                    onClick={generateBulkVoucherPDF}
+                                    type="primary"
+                                    ghost
+                                    style={{ borderColor: '#1890ff' }}
+                                >
+                                    Download Class Vouchers (PDF)
+                                </Button>
+                            </Tooltip>
                         </Space>
                     </Col>
                 </Row>
