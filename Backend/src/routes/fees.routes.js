@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
     createFeeVoucher,
     getAllFees,
+    getFeeMonths,
     getFeesByStudent,
     getPendingFees,
     markFeePaid,
@@ -14,6 +15,9 @@ router.use(verifyJWT);
 
 router.route("/")
     .get(getAllFees);
+
+router.route("/months")
+    .get(getFeeMonths);
 
 router.route("/voucher")
     .post(createFeeVoucher);

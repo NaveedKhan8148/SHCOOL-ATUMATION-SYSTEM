@@ -10,7 +10,8 @@ import {
     DollarOutlined, ClockCircleOutlined, WarningOutlined,
     UserOutlined, FileTextOutlined, SaveOutlined, SearchOutlined,
     MinusCircleOutlined, DollarCircleOutlined, BankOutlined, CheckCircleOutlined,
-    CarOutlined, FundOutlined, PieChartOutlined, RiseOutlined, CloseCircleOutlined, DownloadOutlined
+    CarOutlined, FundOutlined, PieChartOutlined, RiseOutlined, CloseCircleOutlined, DownloadOutlined,
+    CalendarOutlined
 } from '@ant-design/icons';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -46,6 +47,8 @@ const Fees = () => {
     const [transportError, setTransportError] = useState('');
     const [classFilter, setClassFilter] = useState('');
     const [monthFilter, setMonthFilter] = useState('');
+    const [selectedMonth, setSelectedMonth] = useState('ALL');
+    const [dbMonths, setDbMonths] = useState([]);
     const [bulkDownloading, setBulkDownloading] = useState(false);
 
     const extractErrorMessage = (error) => {
@@ -53,9 +56,33 @@ const Fees = () => {
         return error.message || 'Operation failed';
     };
 
+    // Helper to format any month string to "Month Year" (e.g. "October 2026", "June 2026")
+    const formatMonthDisplay = (rawMonth) => {
+        if (!rawMonth || rawMonth === 'ALL') return 'All Months';
+        const parsed = dayjs(rawMonth, ['MMMM YYYY', 'MMM YYYY', 'YYYY-MM', 'YYYY/MM']);
+        if (parsed.isValid()) {
+            return parsed.format('MMMM YYYY');
+        }
+        return rawMonth.trim().split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+    };
+
+    // Consistent and robust month-and-year matcher
+    const isMatchingMonth = (recordMonth, targetMonth) => {
+        if (!targetMonth || targetMonth === 'ALL') return true;
+        if (!recordMonth) return false;
+        if (recordMonth.trim().toLowerCase() === targetMonth.trim().toLowerCase()) return true;
+        const dRecord = dayjs(recordMonth, ['MMMM YYYY', 'MMM YYYY']);
+        const dTarget = dayjs(targetMonth, ['MMMM YYYY', 'MMM YYYY']);
+        if (dRecord.isValid() && dTarget.isValid()) {
+            return dRecord.isSame(dTarget, 'month');
+        }
+        return false;
+    };
+
     useEffect(() => {
         fetchInitialData();
-        fetchFees();
+        fetchFeeMonths();
+        fetchFees('ALL');
     }, []);
 
     const fetchInitialData = async () => {
@@ -75,11 +102,31 @@ const Fees = () => {
         }
     };
 
-    const fetchFees = async () => {
+    const fetchFeeMonths = async () => {
+        try {
+            const token = localStorage.getItem('token');
+            const res = await axios.get('/api/v1/fees/months', {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            if (res.data?.data && Array.isArray(res.data.data)) {
+                setDbMonths(res.data.data);
+            }
+        } catch (err) {
+            // Silently fallback to months found in fees
+        }
+    };
+
+    const fetchFees = async (monthOverride) => {
         setTableLoading(true);
         try {
             const token = localStorage.getItem('token');
+            const targetMonth = monthOverride !== undefined ? monthOverride : selectedMonth;
+            const params = {};
+            if (targetMonth && targetMonth !== 'ALL') {
+                params.month = targetMonth;
+            }
             const res = await axios.get('/api/v1/fees', {
+                params,
                 headers: { Authorization: `Bearer ${token}` }
             });
             if (res.data?.data) setFees(res.data.data);
@@ -90,10 +137,48 @@ const Fees = () => {
         }
     };
 
-    // Full unfiltered student fee summary (reactive source of truth)
+    const handleMonthChange = (newMonth) => {
+        const val = newMonth || 'ALL';
+        setSelectedMonth(val);
+        setMonthFilter(val === 'ALL' ? '' : val);
+        fetchFees(val);
+    };
+
+    // Available fee months collected from DB and loaded fees, formatted as "Month Year"
+    const availableMonths = useMemo(() => {
+        const monthMap = new Map();
+        const addMonth = (m) => {
+            if (!m || typeof m !== 'string' || !m.trim() || m.toUpperCase() === 'ALL') return;
+            const trimmed = m.trim();
+            const display = formatMonthDisplay(trimmed);
+            const normKey = display.toLowerCase();
+            if (!monthMap.has(normKey)) {
+                monthMap.set(normKey, { raw: trimmed, display });
+            }
+        };
+
+        (dbMonths || []).forEach(addMonth);
+        (fees || []).forEach(f => {
+            if (f.feeMonth) addMonth(f.feeMonth);
+        });
+
+        const list = Array.from(monthMap.values());
+        return list.sort((a, b) => {
+            const da = dayjs(a.display, ['MMMM YYYY', 'MMM YYYY']);
+            const db = dayjs(b.display, ['MMMM YYYY', 'MMM YYYY']);
+            if (da.isValid() && db.isValid()) {
+                return db.valueOf() - da.valueOf();
+            }
+            return b.display.localeCompare(a.display);
+        });
+    }, [fees, dbMonths]);
+
+    // Full student fee summary (reactive source of truth)
     const allStudentFeeSummary = useMemo(() => {
         const summary = {};
-        fees.forEach(f => {
+        const activeFees = fees.filter(f => isMatchingMonth(f.feeMonth, selectedMonth));
+
+        activeFees.forEach(f => {
             if (!f.studentId) return;
             const sId = (f.studentId && typeof f.studentId === 'object' && f.studentId._id) ? f.studentId._id : f.studentId;
             if (!summary[sId]) {
@@ -144,7 +229,7 @@ const Fees = () => {
             s.vouchers.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
             return s;
         });
-    }, [fees, students]);
+    }, [fees, students, selectedMonth]);
 
     // Filter fees by Student for main table display
     const studentFeeSummary = useMemo(() => {
@@ -598,27 +683,14 @@ const Fees = () => {
         message.success(`${isReceipt ? 'Official Fee Receipt' : 'Official Fee Voucher'} PDF generated successfully!`);
     };
 
-    // Available fee months for the bulk download selector
-    const availableMonths = useMemo(() => {
-        const months = new Set();
-        fees.forEach(f => {
-            if (f.feeMonth) months.add(f.feeMonth);
-        });
-        return Array.from(months).sort((a, b) => {
-            const da = new Date(a);
-            const db = new Date(b);
-            if (!isNaN(da) && !isNaN(db)) return db - da;
-            return a.localeCompare(b);
-        });
-    }, [fees]);
-
     // Bulk Download: Generate combined PDF with two vouchers per page (side by side)
     const generateBulkVoucherPDF = () => {
         if (!classFilter) {
             message.warning('Please select a class first to download class vouchers.');
             return;
         }
-        if (!monthFilter) {
+        const activeMonth = (selectedMonth && selectedMonth !== 'ALL') ? selectedMonth : monthFilter;
+        if (!activeMonth) {
             message.warning('Please select a fee month to download class vouchers.');
             return;
         }
@@ -629,7 +701,7 @@ const Fees = () => {
             const student = typeof f.studentId === 'object' ? f.studentId : null;
             if (!student) return false;
             const studentClassId = student.classId?._id || student.classId;
-            return studentClassId === classFilter && f.feeMonth === monthFilter;
+            return studentClassId === classFilter && isMatchingMonth(f.feeMonth, activeMonth);
         });
 
         if (matchingVouchers.length === 0) {
@@ -1435,17 +1507,54 @@ const Fees = () => {
     return (
         <div style={{ padding: '24px', background: '#f5f7fa', minHeight: '100vh' }}>
             <div style={{ marginBottom: '24px' }}>
-                <Row justify="space-between" align="middle">
-                    <Col>
+                <Row justify="space-between" align="middle" gutter={[16, 16]}>
+                    <Col xs={24} md={11}>
                         <Title level={2} style={{ margin: 0 }}>
                             <DollarOutlined style={{ marginRight: '10px', color: '#52c41a' }} />
                             Fee & Voucher Management Engine
                         </Title>
                         <Text type="secondary">Issue itemized student fee vouchers, manage concessions, record cash/bank collections, and export printable PDF receipts.</Text>
                     </Col>
-                    <Col>
-                        <Space>
-                            <Button icon={<ReloadOutlined />} onClick={fetchFees}>Refresh</Button>
+                    <Col xs={24} md={13} style={{ textAlign: 'right' }}>
+                        <Space wrap size="middle">
+                            <div style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                background: '#ffffff',
+                                border: '1px solid #d9d9d9',
+                                borderRadius: '8px',
+                                padding: '4px 10px',
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                            }}>
+                                <span style={{ fontWeight: 600, color: '#595959', marginRight: 8, fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                                    <CalendarOutlined style={{ color: '#1890ff' }} /> Month:
+                                </span>
+                                <Select
+                                    id="dashboard-month-selector"
+                                    value={selectedMonth}
+                                    onChange={handleMonthChange}
+                                    style={{ width: 170, textAlign: 'left' }}
+                                    bordered={false}
+                                    dropdownMatchSelectWidth={false}
+                                >
+                                    <Option value="ALL">All Months</Option>
+                                    {availableMonths.map(m => (
+                                        <Option key={m.display} value={m.display}>
+                                            {m.display}
+                                        </Option>
+                                    ))}
+                                </Select>
+                            </div>
+                            <Button 
+                                icon={<ReloadOutlined />} 
+                                onClick={() => {
+                                    fetchFees(selectedMonth);
+                                    fetchFeeMonths();
+                                }}
+                                loading={tableLoading}
+                            >
+                                Refresh
+                            </Button>
                             <Button type="primary" icon={<PlusOutlined />} onClick={openVoucherModal}>
                                 Issue Itemized Fee Voucher
                             </Button>
@@ -1453,6 +1562,32 @@ const Fees = () => {
                     </Col>
                 </Row>
             </div>
+
+            {selectedMonth !== 'ALL' && (
+                <div style={{ marginBottom: '16px' }}>
+                    <Alert
+                        type="info"
+                        showIcon
+                        icon={<CalendarOutlined style={{ color: '#1890ff' }} />}
+                        message={
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                                <span>
+                                    Displaying dashboard metrics & fee records for: <strong>{formatMonthDisplay(selectedMonth)}</strong>
+                                </span>
+                                <Button 
+                                    size="small" 
+                                    type="link" 
+                                    onClick={() => handleMonthChange('ALL')}
+                                    style={{ padding: 0, height: 'auto', fontWeight: 500 }}
+                                >
+                                    Switch to All Months
+                                </Button>
+                            </div>
+                        }
+                        style={{ borderRadius: 8, border: '1px solid #91d5ff', background: '#e6f7ff' }}
+                    />
+                </div>
+            )}
 
             {/* Row 1 — Tuition Fee cards */}
             <Row gutter={[16, 16]} style={{ marginBottom: '16px' }}>
@@ -1631,24 +1766,25 @@ const Fees = () => {
                             </Select>
                             <Select
                                 placeholder="Fee Month"
-                                value={monthFilter || undefined}
-                                onChange={val => setMonthFilter(val || '')}
+                                value={selectedMonth === 'ALL' ? undefined : selectedMonth}
+                                onChange={val => handleMonthChange(val || 'ALL')}
                                 style={{ width: '180px' }}
                                 allowClear
                                 showSearch
                                 filterOption={(input, option) =>
-                                    option.children.toLowerCase().includes(input.toLowerCase())
+                                    String(option?.children || '').toLowerCase().includes(input.toLowerCase())
                                 }
                             >
+                                <Option value="ALL">All Months</Option>
                                 {availableMonths.map(m => (
-                                    <Option key={m} value={m}>{m}</Option>
+                                    <Option key={m.display} value={m.display}>{m.display}</Option>
                                 ))}
                             </Select>
-                            <Tooltip title={!classFilter ? 'Select a class first' : !monthFilter ? 'Select a fee month first' : `Download all vouchers for ${monthFilter}`}>
+                            <Tooltip title={!classFilter ? 'Select a class first' : (selectedMonth === 'ALL' && !monthFilter) ? 'Select a fee month first' : `Download all vouchers for ${selectedMonth !== 'ALL' ? selectedMonth : monthFilter}`}>
                                 <Button
                                     icon={<DownloadOutlined />}
                                     loading={bulkDownloading}
-                                    disabled={!classFilter || !monthFilter}
+                                    disabled={!classFilter || (selectedMonth === 'ALL' && !monthFilter)}
                                     onClick={generateBulkVoucherPDF}
                                     type="primary"
                                     ghost
@@ -1677,7 +1813,9 @@ const Fees = () => {
                                             classes.find(c => c._id === classFilter)
                                                 ? `${classes.find(c => c._id === classFilter).name}${classes.find(c => c._id === classFilter).section ? ` (${classes.find(c => c._id === classFilter).section})` : ''}`
                                                 : 'the selected class'
-                                          }.`
+                                          }${selectedMonth !== 'ALL' ? ` in ${formatMonthDisplay(selectedMonth)}` : ''}.`
+                                        : selectedMonth !== 'ALL'
+                                        ? `No fee records found for ${formatMonthDisplay(selectedMonth)}.`
                                         : 'No fee records found.'}
                                 </div>
                             </div>

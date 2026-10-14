@@ -75,7 +75,9 @@ const getAllFees = asyncHandler(async (req, res) => {
     const query = { organizationId: req.user.organizationId };
 
     if (status) query.status = status.toUpperCase();
-    if (month) query.feeMonth = month;
+    if (month && month !== "ALL" && month !== "all") {
+        query.feeMonth = new RegExp(`^${month.trim()}$`, "i");
+    }
 
     let studentIds = null;
     if (classId) {
@@ -283,9 +285,17 @@ const deleteFee = asyncHandler(async (req, res) => {
     return res.status(200).json(new ApiResponse(200, {}, "Fee record deleted"));
 });
 
+// GET /api/v1/fees/months
+const getFeeMonths = asyncHandler(async (req, res) => {
+    const rawMonths = await Fees.distinct("feeMonth", { organizationId: req.user.organizationId });
+    const months = (rawMonths || []).filter(m => m && typeof m === "string" && m.trim().length > 0);
+    return res.status(200).json(new ApiResponse(200, months, "Fee months fetched successfully"));
+});
+
 export {
     createFeeVoucher,
     getAllFees,
+    getFeeMonths,
     getFeesByStudent,
     getPendingFees,
     markFeePaid,
