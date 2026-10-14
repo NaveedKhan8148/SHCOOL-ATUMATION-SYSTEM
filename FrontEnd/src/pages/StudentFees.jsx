@@ -241,7 +241,8 @@ const StudentFees = () => {
         doc.text(`Student: ${profile?.studentName || '-'}`, 18, 60);
         doc.setFont('helvetica', 'normal');
         doc.text(`Roll No: ${profile?.rollNo || '-'}`, 18, 67);
-        doc.text(`Class: ${profile?.classId?.name || '-'}`, 100, 67);
+        doc.text(`Class: ${profile?.classId?.name || '-'}`, 90, 67);
+        doc.text(`Contact: ${profile?.contactNumber || '-'}`, 145, 67);
 
         // Summary Table
         const summaryRows = [
@@ -430,19 +431,23 @@ const StudentFees = () => {
                     </Col>
                     <Col xs={24} sm={21}>
                         <Row gutter={[16, 8]}>
-                            <Col xs={12} sm={6}>
+                            <Col xs={12} sm={5}>
                                 <Text type="secondary" style={{ fontSize: 12 }}>Student Name</Text>
                                 <div style={{ fontWeight: 600 }}>{profile.studentName}</div>
                             </Col>
-                            <Col xs={12} sm={6}>
+                            <Col xs={12} sm={4}>
                                 <Text type="secondary" style={{ fontSize: 12 }}>Roll Number</Text>
                                 <div style={{ fontWeight: 600 }}>{profile.rollNo}</div>
                             </Col>
-                            <Col xs={12} sm={6}>
+                            <Col xs={12} sm={5}>
                                 <Text type="secondary" style={{ fontSize: 12 }}>Class</Text>
                                 <div style={{ fontWeight: 600 }}>{profile.classId?.name || '-'}</div>
                             </Col>
-                            <Col xs={12} sm={6}>
+                            <Col xs={12} sm={5}>
+                                <Text type="secondary" style={{ fontSize: 12 }}>Contact Number</Text>
+                                <div style={{ fontWeight: 600, color: '#1890ff' }}>{profile.contactNumber || '—'}</div>
+                            </Col>
+                            <Col xs={12} sm={5}>
                                 <Text type="secondary" style={{ fontSize: 12 }}>Total Fee Records</Text>
                                 <div style={{ fontWeight: 600 }}>{processedFees.length}</div>
                             </Col>

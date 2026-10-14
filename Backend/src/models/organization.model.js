@@ -14,9 +14,9 @@ const organizationSchema = new Schema(
             lowercase: true,
             trim: true,
         },
-        phone: {
-            type: String,
-            trim: true,
+        phoneNumbers: {
+            type: [String],
+            default: [],
         },
         address: {
             type: String,

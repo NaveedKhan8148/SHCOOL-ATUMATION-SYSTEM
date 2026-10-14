@@ -24,6 +24,11 @@ const studentSchema = new Schema(
             required: true,
             trim: true,
         },
+        contactNumber: {
+            type: String,
+            trim: true,
+            default: "",
+        },
         address: {
             type: String,
             trim: true,

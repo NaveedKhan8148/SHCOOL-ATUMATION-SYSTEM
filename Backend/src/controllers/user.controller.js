@@ -2,6 +2,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { User } from "../models/user.model.js";
+import { Organization } from "../models/organization.model.js";
 import jwt from "jsonwebtoken";
 
 const generateAccessAndRefreshTokens = async (userId) => {
@@ -50,10 +51,34 @@ const loginUser = asyncHandler(async (req, res) => {
         throw new ApiError(400, "email, password and organizationId are required");
     }
 
-    const user = await User.findOne({
-        organizationId: organizationId.toLowerCase().trim(),
-        email: email.toLowerCase().trim(),
+    const inputOrgId = organizationId.toLowerCase().trim();
+    const emailClean = email.toLowerCase().trim();
+
+    // Look up organization by slug or name
+    const org = await Organization.findOne({
+        $or: [
+            { organizationId: inputOrgId },
+            { name: new RegExp(`^${inputOrgId.replace(/[-_]/g, '[-_ ]?')}$`, 'i') }
+        ]
     });
+
+    const orgId = org ? org.organizationId : inputOrgId;
+
+    // 1. Direct user lookup by email & organizationId
+    let user = await User.findOne({
+        organizationId: orgId,
+        email: emailClean,
+    });
+
+    // 2. Fallback: If not found directly, check if email matches the Organization's contact email
+    // (allows the school creator to log in using their registered organization email)
+    if (!user && org && org.email && org.email.toLowerCase() === emailClean && org.adminUserId) {
+        user = await User.findOne({
+            _id: org.adminUserId,
+            organizationId: org.organizationId,
+        });
+    }
+
     if (!user) throw new ApiError(404, "User not found");
 
     if (user.status === "INACTIVE") {

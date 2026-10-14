@@ -87,7 +87,7 @@ const getAllFees = asyncHandler(async (req, res) => {
     const fees = await Fees.find(query)
         .populate({
             path: "studentId",
-            select: "studentName rollNo classId",
+            select: "studentName rollNo contactNumber address classId",
             populate: { path: "classId", select: "name section" }
         })
         .populate("academicSessionId", "name")
@@ -102,6 +102,11 @@ const getFeesByStudent = asyncHandler(async (req, res) => {
         organizationId: req.user.organizationId,
         studentId: req.params.studentId,
     })
+        .populate({
+            path: "studentId",
+            select: "studentName rollNo contactNumber address classId",
+            populate: { path: "classId", select: "name section" }
+        })
         .populate("academicSessionId", "name")
         .sort({ dueDate: -1 });
 
@@ -115,6 +120,11 @@ const getPendingFees = asyncHandler(async (req, res) => {
         studentId: req.params.studentId,
         status: { $in: ["PENDING", "OVERDUE", "PARTIAL", "Pending", "Overdue"] },
     })
+        .populate({
+            path: "studentId",
+            select: "studentName rollNo contactNumber address classId",
+            populate: { path: "classId", select: "name section" }
+        })
         .populate("academicSessionId", "name")
         .sort({ dueDate: 1 });
 
@@ -240,7 +250,7 @@ const markFeePaid = asyncHandler(async (req, res) => {
     await feeRecord.populate([
         {
             path: "studentId",
-            select: "studentName rollNo classId",
+            select: "studentName rollNo contactNumber address classId",
             populate: { path: "classId", select: "name section" }
         },
         { path: "academicSessionId", select: "name" }

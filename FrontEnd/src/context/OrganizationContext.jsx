@@ -16,6 +16,11 @@ export const OrganizationProvider = ({ children }) => {
     });
     const [loading, setLoading] = useState(true);
 
+    // Derived convenience getters from the full organization object
+    const orgEmail = organization?.email || '';
+    const orgPhoneNumbers = organization?.phoneNumbers || (organization?.phone ? [organization.phone] : []);
+    const orgAddress = organization?.address || '';
+
     const fetchOrganization = useCallback(async () => {
         const token = localStorage.getItem('accessToken');
         if (!token) {
@@ -43,12 +48,15 @@ export const OrganizationProvider = ({ children }) => {
             }
         } catch (err) {
             console.error('Failed to fetch organization settings:', err);
-            // Fallback to cached organizationName in localStorage if present
             const cachedName = localStorage.getItem('organizationName');
             if (cachedName) {
                 setOrganizationName(cachedName);
                 setIsConfigured(true);
             }
+            try {
+                const cached = localStorage.getItem('organizationData');
+                if (cached) setOrganization(JSON.parse(cached));
+            } catch (_) { /* ignore parse errors */ }
         } finally {
             setLoading(false);
         }
@@ -65,44 +73,51 @@ export const OrganizationProvider = ({ children }) => {
         }
     }, [user, fetchOrganization]);
 
+    // Update just the organization name (kept for backward compatibility)
     const updateOrganizationName = async (newName) => {
+        return updateOrganization({ name: newName });
+    };
+
+    // Update any/all organization fields: name, email, phoneNumbers, address
+    const updateOrganization = async (fields = {}) => {
         const token = localStorage.getItem('accessToken');
         if (!token) {
             message.error('Authentication token not found');
             return { ok: false, message: 'Not authenticated' };
         }
 
-        const trimmedName = typeof newName === 'string' ? newName.trim() : '';
-        if (!trimmedName) {
-            message.error('Organization name is required and cannot be empty');
-            return { ok: false, message: 'Name cannot be empty' };
-        }
-
-        if (trimmedName.length > 150) {
-            message.error('Organization name cannot exceed 150 characters');
-            return { ok: false, message: 'Name exceeds 150 characters' };
+        if (fields.name !== undefined) {
+            const trimmedName = typeof fields.name === 'string' ? fields.name.trim() : '';
+            if (!trimmedName) {
+                message.error('Organization name is required and cannot be empty');
+                return { ok: false, message: 'Name cannot be empty' };
+            }
+            if (trimmedName.length > 150) {
+                message.error('Organization name cannot exceed 150 characters');
+                return { ok: false, message: 'Name exceeds 150 characters' };
+            }
+            fields.name = trimmedName;
         }
 
         try {
             const res = await axios.patch(
                 '/api/v1/organizations/me',
-                { name: trimmedName },
+                fields,
                 { headers: { Authorization: `Bearer ${token}` } }
             );
 
             const updatedData = res.data?.data;
             setOrganization(updatedData);
-            setOrganizationName(trimmedName);
+            const updatedName = (updatedData?.name || fields.name || organizationName || '').trim();
+            setOrganizationName(updatedName);
             setIsConfigured(true);
-            localStorage.setItem('organizationName', trimmedName);
-            if (updatedData) {
-                localStorage.setItem('organizationData', JSON.stringify(updatedData));
-            }
+            if (updatedName) localStorage.setItem('organizationName', updatedName);
+            if (updatedData) localStorage.setItem('organizationData', JSON.stringify(updatedData));
 
-            message.success('Organization name saved successfully!');
+            message.success('Organization settings saved successfully!');
             return { ok: true, data: updatedData };
         } catch (err) {
-            const msg = err.response?.data?.message || err.message || 'Failed to update organization name';
+            const msg = err.response?.data?.message || err.message || 'Failed to update organization settings';
             message.error(msg);
             return { ok: false, message: msg };
         }
@@ -113,10 +128,14 @@ export const OrganizationProvider = ({ children }) => {
             value={{
                 organization,
                 organizationName,
+                orgEmail,
+                orgPhoneNumbers,
+                orgAddress,
                 isConfigured,
                 loading,
                 fetchOrganization,
-                updateOrganizationName
+                updateOrganizationName,
+                updateOrganization
             }}
         >
             {children}
@@ -127,15 +146,23 @@ export const OrganizationProvider = ({ children }) => {
 export const useOrganization = () => {
     const context = useContext(OrganizationContext);
     if (!context) {
-        // Fallback object to avoid crashes if accessed outside Provider
         const cachedName = typeof window !== 'undefined' ? localStorage.getItem('organizationName') || '' : '';
+        let cachedOrg = null;
+        try {
+            const raw = typeof window !== 'undefined' ? localStorage.getItem('organizationData') : null;
+            if (raw) cachedOrg = JSON.parse(raw);
+        } catch (_) { /* ignore */ }
         return {
-            organization: null,
+            organization: cachedOrg,
             organizationName: cachedName,
+            orgEmail: cachedOrg?.email || '',
+            orgPhoneNumbers: cachedOrg?.phoneNumbers || [],
+            orgAddress: cachedOrg?.address || '',
             isConfigured: !!cachedName,
             loading: false,
             fetchOrganization: async () => {},
-            updateOrganizationName: async () => ({ ok: false })
+            updateOrganizationName: async () => ({ ok: false }),
+            updateOrganization: async () => ({ ok: false })
         };
     }
     return context;

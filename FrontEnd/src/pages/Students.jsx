@@ -7,7 +7,7 @@ import {
     PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined,
     ReloadOutlined, UserOutlined, MailOutlined, BookOutlined,
     CalendarOutlined, HomeOutlined, TeamOutlined, SaveOutlined,
-    CheckCircleOutlined, CloseCircleOutlined, DollarOutlined
+    CheckCircleOutlined, CloseCircleOutlined, DollarOutlined, PhoneOutlined
 } from '@ant-design/icons';
 import axios from 'axios';
 import dayjs from 'dayjs';
@@ -202,6 +202,16 @@ const Students = () => {
             ),
         },
         {
+            title: 'Contact',
+            key: 'contactNumber',
+            render: (_, record) => (
+                <Space>
+                    <PhoneOutlined style={{ color: '#8c8c8c' }} />
+                    <span>{record.contactNumber || '-'}</span>
+                </Space>
+            ),
+        },
+        {
             title: 'Date of Birth',
             key: 'dateOfBirth',
             render: (_, record) => (
@@ -292,6 +302,7 @@ const Students = () => {
         form.setFieldsValue({
             rollNo: record.rollNo,
             studentName: record.studentName,
+            contactNumber: record.contactNumber || '',
             address: record.address,
             classId: record.classId?._id,
             dateOfBirth: record.dateOfBirth
@@ -330,6 +341,7 @@ const Students = () => {
                 const updateData = {
                     rollNo: values.rollNo,
                     studentName: values.studentName,
+                    contactNumber: values.contactNumber || '',
                     address: values.address,
                     dateOfBirth: values.dateOfBirth,
                     classId: values.classId,
@@ -348,6 +360,7 @@ const Students = () => {
                     password: values.password,
                     rollNo: values.rollNo,
                     studentName: values.studentName,
+                    contactNumber: values.contactNumber || '',
                     address: values.address,
                     dateOfBirth: values.dateOfBirth,
                     classId: values.classId,
@@ -612,6 +625,15 @@ const Students = () => {
 
                     <Form.Item name="address" label="Address">
                         <Input.TextArea rows={2} placeholder="Enter student address" />
+                    </Form.Item>
+
+                    <Form.Item name="contactNumber" label="Contact Number">
+                        <Input 
+                            placeholder="e.g. 03001234567" 
+                            size="large"
+                            prefix={<PhoneOutlined style={{ color: '#8c8c8c' }} />}
+                            maxLength={15}
+                        />
                     </Form.Item>
 
                     <Form.Item

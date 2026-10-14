@@ -4,6 +4,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { User } from "../models/user.model.js";
+import { Organization } from "../models/organization.model.js";
 import { sendPasswordResetEmail } from "../utils/emailService.js";
 
 // ─── Helper: generate a secure random token and its hash ──────────────────────
@@ -23,11 +24,30 @@ const forgotPassword = asyncHandler(async (req, res) => {
         throw new ApiError(400, "Email and Organization ID are required");
     }
 
-    // Find the user inside this organization
-    const user = await User.findOne({
-        email: email.toLowerCase().trim(),
-        organizationId: organizationId.trim(),
+    const inputOrgId = organizationId.toLowerCase().trim();
+    const emailClean = email.toLowerCase().trim();
+
+    // Look up organization by slug or name
+    const org = await Organization.findOne({
+        $or: [
+            { organizationId: inputOrgId },
+            { name: new RegExp(`^${inputOrgId.replace(/[-_]/g, '[-_ ]?')}$`, 'i') }
+        ]
     });
+    const orgId = org ? org.organizationId : inputOrgId;
+
+    // Find the user inside this organization
+    let user = await User.findOne({
+        email: emailClean,
+        organizationId: orgId,
+    });
+
+    if (!user && org && org.email && org.email.toLowerCase() === emailClean && org.adminUserId) {
+        user = await User.findOne({
+            _id: org.adminUserId,
+            organizationId: org.organizationId,
+        });
+    }
 
     // Always respond OK even if user not found — prevents email enumeration attacks
     if (!user) {

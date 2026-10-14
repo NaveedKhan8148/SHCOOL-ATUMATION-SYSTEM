@@ -22,7 +22,7 @@ const { Option } = Select;
 const { Title, Text, Paragraph } = Typography;
 
 const Fees = () => {
-    const { organizationName } = useOrganization();
+    const { organizationName, orgEmail, orgPhoneNumbers, orgAddress } = useOrganization();
     const [students, setStudents] = useState([]);
     const [classes, setClasses] = useState([]);
     const [sessions, setSessions] = useState([]);
@@ -97,8 +97,12 @@ const Fees = () => {
             if (!f.studentId) return;
             const sId = (f.studentId && typeof f.studentId === 'object' && f.studentId._id) ? f.studentId._id : f.studentId;
             if (!summary[sId]) {
+                const matchedStudent = students.find(s => String(s._id) === String(sId)) || {};
+                const studentObj = (f.studentId && typeof f.studentId === 'object')
+                    ? { ...matchedStudent, ...f.studentId }
+                    : (matchedStudent._id ? matchedStudent : f.studentId);
                 summary[sId] = {
-                    student: f.studentId,
+                    student: studentObj,
                     totalFee: 0,
                     totalPaid: 0,
                     academicFee: 0,
@@ -140,14 +144,18 @@ const Fees = () => {
             s.vouchers.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
             return s;
         });
-    }, [fees]);
+    }, [fees, students]);
 
     // Filter fees by Student for main table display
     const studentFeeSummary = useMemo(() => {
         return allStudentFeeSummary.filter(s => {
             const name = s.student?.studentName || '';
             const roll = s.student?.rollNo || '';
-            const matchesSearch = name.toLowerCase().includes(searchText.toLowerCase()) || roll.toLowerCase().includes(searchText.toLowerCase());
+            const contact = s.student?.contactNumber || '';
+            const searchLower = searchText.toLowerCase();
+            const matchesSearch = name.toLowerCase().includes(searchLower) ||
+                                  roll.toLowerCase().includes(searchLower) ||
+                                  contact.toLowerCase().includes(searchLower);
             const matchesStatus = statusFilter ? s.status === statusFilter : true;
             const matchesClass = classFilter ? ((s.student?.classId?._id === classFilter) || (s.student?.classId === classFilter)) : true;
             return matchesSearch && matchesStatus && matchesClass;
@@ -210,9 +218,16 @@ const Fees = () => {
         if (!record) return;
 
         const doc = new jsPDF();
-        const student = (record.studentId && typeof record.studentId === 'object' && record.studentId.studentName)
-            ? record.studentId
-            : (selectedStudentForHistory?.student || record.studentId || {});
+        const sId = (record.studentId && typeof record.studentId === 'object' && record.studentId._id)
+            ? record.studentId._id
+            : (record.studentId || selectedStudentForHistory?.student?._id || (typeof selectedStudentForHistory?.student === 'string' ? selectedStudentForHistory.student : null));
+        const matchedStudent = students.find(s => String(s._id) === String(sId)) || {};
+        const student = {
+            ...matchedStudent,
+            ...((selectedStudentForHistory?.student && typeof selectedStudentForHistory.student === 'object') ? selectedStudentForHistory.student : {}),
+            ...((record.studentId && typeof record.studentId === 'object') ? record.studentId : {})
+        };
+        const studentContact = student.contactNumber || matchedStudent.contactNumber || '-';
 
         let className = '-';
         if (student.classId && typeof student.classId === 'object' && student.classId.name) {
@@ -281,69 +296,81 @@ const Fees = () => {
             docSubtitle = `${schoolTitle} - PAYMENT RECEIPT & REMAINING DUES STATEMENT`;
         }
 
-        // Primary Header Band (0 to 32 mm)
+        // Primary Header Band (0 to 38 mm)
         doc.setFillColor(24, 144, 255);
-        doc.rect(0, 0, 210, 32, 'F');
+        doc.rect(0, 0, 210, 38, 'F');
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(16);
         doc.setTextColor(255, 255, 255);
-        doc.text(schoolTitle, 105, 13, { align: 'center' });
+        doc.text(schoolTitle, 105, 11, { align: 'center' });
+
+        // Org contact info line
+        const orgContactParts = [];
+        if (orgAddress) orgContactParts.push(orgAddress);
+        if (orgPhoneNumbers && orgPhoneNumbers.length > 0) orgContactParts.push(orgPhoneNumbers.join(' | '));
+        if (orgEmail) orgContactParts.push(orgEmail);
+        if (orgContactParts.length > 0) {
+            doc.setFontSize(7.5);
+            doc.setFont('helvetica', 'normal');
+            doc.text(orgContactParts.join('  •  '), 105, 18, { align: 'center', maxWidth: 190 });
+        }
 
         doc.setFontSize(10.5);
         doc.setFont('helvetica', 'bold');
-        doc.text(docTitle, 105, 21, { align: 'center' });
+        doc.text(docTitle, 105, 26, { align: 'center' });
 
         doc.setFontSize(8);
         doc.setFont('helvetica', 'normal');
-        doc.text(docSubtitle, 105, 28, { align: 'center' });
+        doc.text(docSubtitle, 105, 33, { align: 'center' });
 
-        // Voucher Meta Information (y: 38 to 50)
+        // Voucher Meta Information (y: 44 to 56)
         doc.setTextColor(50, 50, 50);
         doc.setFontSize(9.5);
 
         // Row 1: Voucher No & Issue Date
         doc.setFont('helvetica', 'bold');
-        doc.text('Voucher No:', 14, 40);
+        doc.text('Voucher No:', 14, 46);
         doc.setFont('helvetica', 'normal');
-        doc.text(`${record.voucherNo || record._id}`, 42, 40);
+        doc.text(`${record.voucherNo || record._id}`, 42, 46);
 
         doc.setFont('helvetica', 'bold');
-        doc.text('Issue Date:', 135, 40);
+        doc.text('Issue Date:', 135, 46);
         doc.setFont('helvetica', 'normal');
-        doc.text(`${dayjs(record.createdAt).format('DD MMM YYYY')}`, 160, 40);
+        doc.text(`${dayjs(record.createdAt).format('DD MMM YYYY')}`, 160, 46);
 
         // Row 2: Fee Month & Due Date
         doc.setFont('helvetica', 'bold');
-        doc.text('Fee Month:', 14, 47);
+        doc.text('Fee Month:', 14, 53);
         doc.setFont('helvetica', 'normal');
-        doc.text(`${record.feeMonth || 'Current Month'}`, 42, 47);
+        doc.text(`${record.feeMonth || 'Current Month'}`, 42, 53);
 
         doc.setFont('helvetica', 'bold');
-        doc.text('Due Date:', 135, 47);
+        doc.text('Due Date:', 135, 53);
         doc.setFont('helvetica', 'normal');
-        doc.text(`${dayjs(record.dueDate).format('DD MMM YYYY')}`, 160, 47);
+        doc.text(`${dayjs(record.dueDate).format('DD MMM YYYY')}`, 160, 53);
 
         // Status determination
         const statusText = remainingAmount === 0 && totalFee > 0 ? 'PAID' : (totalPaid > 0 ? 'PARTIAL' : (record.status || 'PENDING'));
 
-        // Student Info Block & Status Badge Box (y: 53 to 79)
+        // Student Info Block & Status Badge Box (y: 59 to 90)
         // Left Student Card
         doc.setDrawColor(215, 220, 228);
         doc.setFillColor(248, 250, 252);
-        doc.roundedRect(14, 53, 116, 26, 2, 2, 'FD');
+        doc.roundedRect(14, 59, 116, 31, 2, 2, 'FD');
 
         doc.setTextColor(30, 30, 30);
         doc.setFontSize(9.5);
         doc.setFont('helvetica', 'bold');
-        doc.text(`Student Name:  ${student.studentName || 'Student'}`, 18, 60);
+        doc.text(`Student Name:  ${student.studentName || 'Student'}`, 18, 66);
         doc.setFont('helvetica', 'normal');
-        doc.text(`Roll Number:   ${student.rollNo || '-'}`, 18, 67);
-        doc.text(`Class & Sec:   ${className}`, 18, 74);
+        doc.text(`Roll Number:   ${student.rollNo || '-'}`, 18, 73);
+        doc.text(`Class & Sec:   ${className}`, 18, 80);
+        doc.text(`Contact No:    ${studentContact}`, 18, 87);
 
         // Right Status Badge Card
         doc.setDrawColor(215, 220, 228);
         doc.setFillColor(255, 255, 255);
-        doc.roundedRect(135, 53, 61, 26, 2, 2, 'FD');
+        doc.roundedRect(135, 59, 61, 31, 2, 2, 'FD');
 
         // Status Badge Fill
         if (statusText === 'PAID') {
@@ -353,26 +380,26 @@ const Fees = () => {
         } else {
             doc.setFillColor(255, 77, 79);
         }
-        doc.roundedRect(140, 57, 51, 9, 2, 2, 'F');
+        doc.roundedRect(140, 66, 51, 9, 2, 2, 'F');
         doc.setTextColor(255, 255, 255);
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(9.5);
-        doc.text(`STATUS: ${statusText}`, 165.5, 63, { align: 'center' });
+        doc.text(`STATUS: ${statusText}`, 165.5, 72, { align: 'center' });
 
         doc.setFontSize(8.5);
         doc.setFont('helvetica', 'normal');
         if (statusText === 'PAID') {
             doc.setTextColor(82, 196, 26);
-            doc.text('Dues Fully Cleared', 165.5, 73, { align: 'center' });
+            doc.text('Dues Fully Cleared', 165.5, 84, { align: 'center' });
         } else if (statusText === 'PARTIAL') {
             doc.setTextColor(217, 83, 79);
-            doc.text(`Remaining: Rs ${remainingAmount.toLocaleString()}`, 165.5, 73, { align: 'center' });
+            doc.text(`Remaining: Rs ${remainingAmount.toLocaleString()}`, 165.5, 84, { align: 'center' });
         } else {
             doc.setTextColor(255, 77, 79);
-            doc.text(`Payable: Rs ${remainingAmount.toLocaleString()}`, 165.5, 73, { align: 'center' });
+            doc.text(`Payable: Rs ${remainingAmount.toLocaleString()}`, 165.5, 84, { align: 'center' });
         }
 
-        // Table 1: Itemized Fee Heads (startY: 84)
+        // Table 1: Itemized Fee Heads (startY: 95)
         const feeHeadsRows = (feeHeadsList.length > 0)
             ? feeHeadsList.map(h => [h.headName, `Rs ${Number(h.amount).toLocaleString()}`])
             : [
@@ -381,7 +408,7 @@ const Fees = () => {
             ];
 
         autoTable(doc, {
-            startY: 84,
+            startY: 95,
             head: [['Fee Head / Particulars', 'Amount (PKR)']],
             body: feeHeadsRows,
             theme: 'grid',
@@ -644,8 +671,14 @@ const Fees = () => {
                 const uw = colW - 2 * m; // 93mm usable width
                 const mRight = 210 - rm; // right margin for autoTable
 
-                const student = (record.studentId && typeof record.studentId === 'object' && record.studentId.studentName)
-                    ? record.studentId : {};
+                const sId = (record.studentId && typeof record.studentId === 'object' && record.studentId._id)
+                    ? record.studentId._id : record.studentId;
+                const matchedStudent = students.find(s => String(s._id) === String(sId)) || {};
+                const student = {
+                    ...matchedStudent,
+                    ...((record.studentId && typeof record.studentId === 'object') ? record.studentId : {})
+                };
+                const studentContact = student.contactNumber || matchedStudent.contactNumber || '-';
 
                 // ── Class name extraction ──
                 let className = '-';
@@ -686,19 +719,36 @@ const Fees = () => {
 
                 // ═══ 1. Header Band ═══
                 doc.setFillColor(24, 144, 255);
-                doc.rect(colX, 4, colW, 18, 'F');
+                doc.rect(colX, 4, colW, 24, 'F');
                 doc.setFont('helvetica', 'bold');
                 doc.setFontSize(8.5);
                 doc.setTextColor(255, 255, 255);
-                doc.text(schoolTitle, cx, 11, { align: 'center', maxWidth: uw - 4 });
+                doc.text(schoolTitle, cx, 10, { align: 'center', maxWidth: uw - 4 });
+
+                // Org contact info (compact)
+                const bulkOrgParts = [];
+                if (orgPhoneNumbers && orgPhoneNumbers.length > 0) bulkOrgParts.push(orgPhoneNumbers.join(', '));
+                if (orgEmail) bulkOrgParts.push(orgEmail);
+                if (bulkOrgParts.length > 0) {
+                    doc.setFontSize(4);
+                    doc.setFont('helvetica', 'normal');
+                    doc.text(bulkOrgParts.join(' | '), cx, 14.5, { align: 'center', maxWidth: uw - 4 });
+                }
+                if (orgAddress) {
+                    doc.setFontSize(3.5);
+                    doc.setFont('helvetica', 'normal');
+                    doc.text(orgAddress, cx, 18, { align: 'center', maxWidth: uw - 4 });
+                }
+
                 doc.setFontSize(6);
-                doc.text(docTitle, cx, 16, { align: 'center' });
+                doc.setFont('helvetica', 'bold');
+                doc.text(docTitle, cx, 22, { align: 'center' });
                 doc.setFontSize(4.5);
                 doc.setFont('helvetica', 'normal');
-                doc.text('Official Fee Document', cx, 20, { align: 'center' });
+                doc.text('Official Fee Document', cx, 26, { align: 'center' });
 
                 // ═══ 2. Voucher Meta ═══
-                let y = 26;
+                let y = 32;
                 doc.setTextColor(50, 50, 50);
                 doc.setFontSize(5.5);
 
@@ -728,7 +778,7 @@ const Fees = () => {
                 y += 4;
                 doc.setDrawColor(215, 220, 228);
                 doc.setFillColor(248, 250, 252);
-                doc.roundedRect(lm, y, uw, 18, 1.5, 1.5, 'FD');
+                doc.roundedRect(lm, y, uw, 22, 1.5, 1.5, 'FD');
 
                 doc.setTextColor(30, 30, 30);
                 doc.setFontSize(5.5);
@@ -737,6 +787,7 @@ const Fees = () => {
                 doc.setFont('helvetica', 'normal');
                 doc.text(`Roll No:  ${student.rollNo || '-'}`, lm + 2, y + 10);
                 doc.text(`Class:    ${className}`, lm + 2, y + 15);
+                doc.text(`Contact:  ${studentContact}`, lm + 2, y + 20);
 
                 // Status badge (top-right of card)
                 const badgeW = 22;
@@ -754,14 +805,14 @@ const Fees = () => {
                 doc.setFont('helvetica', 'normal');
                 if (statusText === 'PAID') {
                     doc.setTextColor(82, 196, 26);
-                    doc.text('Fully Paid', badgeX + badgeW / 2, y + 13, { align: 'center' });
+                    doc.text('Fully Paid', badgeX + badgeW / 2, y + 15, { align: 'center' });
                 } else {
                     doc.setTextColor(217, 83, 79);
-                    doc.text(`Rem: Rs ${remainingAmount.toLocaleString()}`, badgeX + badgeW / 2, y + 13, { align: 'center' });
+                    doc.text(`Rem: Rs ${remainingAmount.toLocaleString()}`, badgeX + badgeW / 2, y + 15, { align: 'center' });
                 }
 
                 // ═══ 4. Fee Heads Table ═══
-                y += 21;
+                y += 25;
                 const feeHeadsRows = feeHeadsList.length > 0
                     ? feeHeadsList.map(h => [h.headName, `Rs ${Number(h.amount).toLocaleString()}`])
                     : [
@@ -1206,12 +1257,30 @@ const Fees = () => {
         {
             title: 'Student Details',
             key: 'student',
-            render: (_, record) => (
-                <div>
-                    <Text strong style={{ fontSize: '14px' }}>{record.student.studentName}</Text>
-                    <div><Text type="secondary" style={{ fontSize: '12px' }}>Roll: {record.student.rollNo} | Class: {record.student.classId?.name || '-'}</Text></div>
-                </div>
-            )
+            render: (_, record) => {
+                const sId = (record.student && typeof record.student === 'object' && record.student._id) ? record.student._id : record.student;
+                const matched = students.find(s => String(s._id) === String(sId));
+                const contact = record.student?.contactNumber || matched?.contactNumber;
+                return (
+                    <div>
+                        <Text strong style={{ fontSize: '14px' }}>{record.student?.studentName || '-'}</Text>
+                        <div>
+                            <Text type="secondary" style={{ fontSize: '12px' }}>
+                                Roll: {record.student?.rollNo || '-'} | Class: {record.student?.classId?.name || '-'}
+                            </Text>
+                        </div>
+                        <div style={{ marginTop: 2 }}>
+                            {contact ? (
+                                <Tag color="blue" style={{ fontSize: '11px', margin: 0, padding: '0 6px', borderRadius: 4 }}>
+                                    📞 {contact}
+                                </Tag>
+                            ) : (
+                                <Text type="secondary" style={{ fontSize: '11px', color: '#bfbfbf' }}>No contact</Text>
+                            )}
+                        </div>
+                    </div>
+                );
+            }
         },
         {
             title: 'Academic Fee',
@@ -1768,6 +1837,31 @@ const Fees = () => {
                 width={720}
                 destroyOnClose
             >
+                {selectedStudentForHistory?.student && (() => {
+                    const stu = selectedStudentForHistory.student;
+                    const sId = (stu && typeof stu === 'object' && stu._id) ? stu._id : stu;
+                    const matchedStudent = students.find(s => String(s._id) === String(sId));
+                    const contact = stu.contactNumber || matchedStudent?.contactNumber || '—';
+                    const roll = stu.rollNo || matchedStudent?.rollNo || '—';
+                    const clsName = stu.classId?.name || matchedStudent?.classId?.name || '—';
+                    return (
+                        <div style={{
+                            marginBottom: 16,
+                            padding: '10px 14px',
+                            background: '#f6ffed',
+                            borderRadius: 6,
+                            border: '1px solid #b7eb8f',
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            gap: '16px',
+                            fontSize: 13
+                        }}>
+                            <span><strong>Roll No:</strong> {roll}</span>
+                            <span><strong>Class:</strong> {clsName}</span>
+                            <span><strong>Contact No:</strong> <span style={{ color: '#389e0d', fontWeight: 600 }}>{contact}</span></span>
+                        </div>
+                    );
+                })()}
                 <Form
                     form={payForm}
                     layout="vertical"
@@ -1982,6 +2076,32 @@ const Fees = () => {
                 footer={null}
                 width={850}
             >
+                {selectedStudentForHistory?.student && (() => {
+                    const stu = selectedStudentForHistory.student;
+                    const sId = (stu && typeof stu === 'object' && stu._id) ? stu._id : stu;
+                    const matchedStudent = students.find(s => String(s._id) === String(sId));
+                    const contact = stu.contactNumber || matchedStudent?.contactNumber || '—';
+                    const roll = stu.rollNo || matchedStudent?.rollNo || '—';
+                    const clsName = stu.classId?.name || matchedStudent?.classId?.name || '—';
+                    return (
+                        <div style={{
+                            marginBottom: 16,
+                            padding: '10px 14px',
+                            background: '#f0f5ff',
+                            borderRadius: 8,
+                            border: '1px solid #adc6ff',
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            gap: '16px',
+                            alignItems: 'center',
+                            fontSize: 13
+                        }}>
+                            <span><strong>Roll No:</strong> {roll}</span>
+                            <span><strong>Class:</strong> {clsName}</span>
+                            <span><strong>Contact No:</strong> <span style={{ color: '#1d39c4', fontWeight: 600 }}>{contact}</span></span>
+                        </div>
+                    );
+                })()}
                 <Table
                     columns={historyColumns}
                     dataSource={selectedStudentForHistory?.vouchers || []}

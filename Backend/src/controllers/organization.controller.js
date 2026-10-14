@@ -170,7 +170,7 @@ const updateMyOrganization = asyncHandler(async (req, res) => {
         throw new ApiError(403, "Only ADMIN can update organization settings");
     }
 
-    const { name, phone, address, logoUrl } = req.body;
+    const { name, phoneNumbers, phone, address, logoUrl } = req.body;
 
     if (name !== undefined) {
         const trimmed = typeof name === "string" ? name.trim() : "";
@@ -184,14 +184,22 @@ const updateMyOrganization = asyncHandler(async (req, res) => {
 
     const updates = {};
     if (name !== undefined) updates.name = name.trim();
-    if (phone !== undefined) updates.phone = phone?.trim();
+    // Email is NOT editable here — it is set once during organization registration
+    if (phoneNumbers !== undefined) {
+        // Accept array of phone numbers, trim and filter empty
+        updates.phoneNumbers = Array.isArray(phoneNumbers)
+            ? phoneNumbers.map(p => (p || "").trim()).filter(p => p)
+            : [];
+    } else if (phone !== undefined) {
+        // Backwards compatibility: single phone string → array
+        updates.phoneNumbers = phone?.trim() ? [phone.trim()] : [];
+    }
     if (address !== undefined) updates.address = address?.trim();
     if (logoUrl !== undefined) updates.logoUrl = logoUrl?.trim();
 
     const targetOrgId = req.user.organizationId || "default";
 
     // Atomically find and update, or insert if not exists (upsert)
-    // Ensures strictly ONE record per organizationId with NO duplicates!
     const org = await Organization.findOneAndUpdate(
         { organizationId: targetOrgId },
         { 

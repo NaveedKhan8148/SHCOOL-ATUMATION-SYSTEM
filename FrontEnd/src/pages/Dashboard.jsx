@@ -11,7 +11,8 @@ import {
     RiseOutlined, FallOutlined, TrophyOutlined,
     CheckCircleOutlined, CloseCircleOutlined,
     PlusOutlined, MailOutlined, LockOutlined, SaveOutlined,
-    BankOutlined, EditOutlined, PrinterOutlined
+    BankOutlined, EditOutlined, PrinterOutlined,
+    PhoneOutlined, HomeOutlined, DeleteOutlined, PlusCircleOutlined
 } from '@ant-design/icons';
 import axios from 'axios';
 import jsPDF from 'jspdf';
@@ -134,33 +135,58 @@ const Dashboard = () => {
 
     // Organization settings state
     const { user } = useAuth();
-    const { organizationName, isConfigured, updateOrganizationName } = useOrganization();
+    const { organizationName, orgEmail, orgPhoneNumbers, orgAddress, isConfigured, updateOrganization } = useOrganization();
     const [isEditingOrg, setIsEditingOrg] = useState(false);
     const [orgInputName, setOrgInputName] = useState('');
+    const [orgInputPhones, setOrgInputPhones] = useState(['']);
+    const [orgInputAddress, setOrgInputAddress] = useState('');
     const [savingOrg, setSavingOrg] = useState(false);
 
     useEffect(() => {
-        if (organizationName) {
-            setOrgInputName(organizationName);
-        }
-    }, [organizationName]);
+        if (organizationName) setOrgInputName(organizationName);
+        if (orgPhoneNumbers && orgPhoneNumbers.length > 0) setOrgInputPhones(orgPhoneNumbers);
+        else setOrgInputPhones(['']);
+        if (orgAddress) setOrgInputAddress(orgAddress);
+    }, [organizationName, orgPhoneNumbers, orgAddress]);
 
-    const handleSaveOrgName = async () => {
-        const trimmed = (orgInputName || '').trim();
-        if (!trimmed) {
+    const resetOrgInputs = () => {
+        setOrgInputName(organizationName || '');
+        setOrgInputPhones(orgPhoneNumbers && orgPhoneNumbers.length > 0 ? [...orgPhoneNumbers] : ['']);
+        setOrgInputAddress(orgAddress || '');
+    };
+
+    const handleSaveOrgSettings = async () => {
+        const trimmedName = (orgInputName || '').trim();
+        if (!trimmedName) {
             message.error('Organization name is required and cannot be empty.');
             return;
         }
-        if (trimmed.length > 150) {
+        if (trimmedName.length > 150) {
             message.error('Organization name cannot exceed 150 characters.');
             return;
         }
         setSavingOrg(true);
-        const res = await updateOrganizationName(trimmed);
+        const cleanPhones = orgInputPhones.map(p => (p || '').trim()).filter(p => p);
+        const res = await updateOrganization({
+            name: trimmedName,
+            phoneNumbers: cleanPhones,
+            address: (orgInputAddress || '').trim()
+        });
         setSavingOrg(false);
         if (res.ok) {
             setIsEditingOrg(false);
         }
+    };
+
+    const addPhoneField = () => setOrgInputPhones([...orgInputPhones, '']);
+    const removePhoneField = (index) => {
+        const updated = orgInputPhones.filter((_, i) => i !== index);
+        setOrgInputPhones(updated.length > 0 ? updated : ['']);
+    };
+    const updatePhoneField = (index, value) => {
+        const updated = [...orgInputPhones];
+        updated[index] = value;
+        setOrgInputPhones(updated);
     };
 
     const exportAnalyticsPDF = () => {
@@ -455,7 +481,7 @@ const Dashboard = () => {
                                 )}
                             </div>
                             <Text type="secondary" style={{ fontSize: 13 }}>
-                                Official school / organization name displayed on all printable vouchers, receipts, and academic reports.
+                                Organization name, email, phone numbers, and address displayed on all printable vouchers, receipts, and reports.
                             </Text>
                         </div>
                     </div>
@@ -465,106 +491,163 @@ const Dashboard = () => {
                             icon={<EditOutlined />}
                             onClick={() => {
                                 setIsEditingOrg(true);
-                                setOrgInputName(organizationName);
+                                resetOrgInputs();
                             }}
                         >
-                            Edit Organization Name
+                            Edit Organization Details
                         </Button>
                     )}
                 </div>
 
-                {/* Initial Setup (First time: empty input field + Save button) */}
-                {!isConfigured && (
-                    <div style={{ marginTop: 8, padding: '16px', background: '#ffffff', borderRadius: '8px', border: '1px solid #d9d9d9' }}>
-                        <Text strong style={{ display: 'block', marginBottom: 8, fontSize: 14 }}>
-                            Organization Name <Text type="danger">*</Text>
-                        </Text>
-                        {(user?.role === 'ADMIN' || user?.role === 'SUPERADMIN') ? (
-                            <>
-                                <Space.Compact style={{ width: '100%', maxWidth: 600 }}>
-                                    <Input
-                                        size="large"
-                                        prefix={<BankOutlined style={{ color: '#bfbfbf' }} />}
-                                        placeholder="Enter organization name (e.g. Zaid Public School)"
-                                        value={orgInputName}
-                                        onChange={(e) => setOrgInputName(e.target.value)}
-                                        onPressEnter={handleSaveOrgName}
-                                        maxLength={150}
-                                    />
-                                    <Button
-                                        type="primary"
-                                        size="large"
-                                        icon={<SaveOutlined />}
-                                        loading={savingOrg}
-                                        onClick={handleSaveOrgName}
-                                    >
-                                        Save Organization Name
-                                    </Button>
-                                </Space.Compact>
-                                <Text type="secondary" style={{ display: 'block', marginTop: 8, fontSize: 12 }}>
-                                    Once saved, this name becomes the permanent header across all vouchers, receipts, and transcripts.
+                {/* Initial Setup OR Edit Mode — shared form */}
+                {((!isConfigured) || isEditingOrg) && (user?.role === 'ADMIN' || user?.role === 'SUPERADMIN') && (
+                    <div style={{ marginTop: 8, padding: '20px', background: '#ffffff', borderRadius: '8px', border: '1px solid #d9d9d9' }}>
+                        <Row gutter={[16, 16]}>
+                            <Col xs={24} md={12}>
+                                <Text strong style={{ display: 'block', marginBottom: 6, fontSize: 13 }}>
+                                    Organization Name <Text type="danger">*</Text>
                                 </Text>
-                            </>
-                        ) : (
-                            <Text type="secondary">
-                                Organization name has not been configured yet. Please contact an administrator to set the school name.
-                            </Text>
-                        )}
-                    </div>
-                )}
-
-                {/* Display Saved Name (Configured) */}
-                {isConfigured && !isEditingOrg && (
-                    <div style={{ marginTop: 12, padding: '12px 16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-                        <div>
-                            <Text type="secondary" style={{ fontSize: 12, display: 'block', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Current Saved Organization Name</Text>
-                            <Text strong style={{ fontSize: 18, color: '#0f172a' }}>
-                                {organizationName}
-                            </Text>
-                        </div>
-                        <Text type="secondary" style={{ fontSize: 13, fontStyle: 'italic' }}>
-                            Applied across all printable vouchers, receipts, and transcripts
-                        </Text>
-                    </div>
-                )}
-
-                {/* Edit Mode */}
-                {isConfigured && isEditingOrg && (
-                    <div style={{ marginTop: 8, padding: '16px', background: '#ffffff', borderRadius: '8px', border: '1px solid #d9d9d9' }}>
-                        <Text strong style={{ display: 'block', marginBottom: 8, fontSize: 14 }}>
-                            Update Organization Name <Text type="danger">*</Text>
-                        </Text>
-                        <Space.Compact style={{ width: '100%', maxWidth: 650 }}>
-                            <Input
-                                size="large"
-                                prefix={<BankOutlined style={{ color: '#bfbfbf' }} />}
-                                placeholder="Enter organization name"
-                                value={orgInputName}
-                                onChange={(e) => setOrgInputName(e.target.value)}
-                                onPressEnter={handleSaveOrgName}
-                                maxLength={150}
-                            />
+                                <Input
+                                    size="large"
+                                    prefix={<BankOutlined style={{ color: '#bfbfbf' }} />}
+                                    placeholder="e.g. Zaid Public School"
+                                    value={orgInputName}
+                                    onChange={(e) => setOrgInputName(e.target.value)}
+                                    maxLength={150}
+                                />
+                            </Col>
+                            <Col xs={24} md={12}>
+                                <Text strong style={{ display: 'block', marginBottom: 6, fontSize: 13 }}>
+                                    Organization Email <Text type="secondary" style={{ fontWeight: 'normal', fontSize: 11 }}>(set at registration)</Text>
+                                </Text>
+                                <Input
+                                    size="large"
+                                    prefix={<MailOutlined style={{ color: '#bfbfbf' }} />}
+                                    value={orgEmail || 'Not set'}
+                                    disabled
+                                    style={{ background: '#f5f5f5' }}
+                                />
+                            </Col>
+                            <Col xs={24} md={12}>
+                                <Text strong style={{ display: 'block', marginBottom: 6, fontSize: 13 }}>
+                                    Phone Numbers
+                                </Text>
+                                {orgInputPhones.map((phone, idx) => (
+                                    <div key={idx} style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                                        <Input
+                                            size="large"
+                                            prefix={<PhoneOutlined style={{ color: '#bfbfbf' }} />}
+                                            placeholder={`Phone number ${idx + 1}`}
+                                            value={phone}
+                                            onChange={(e) => updatePhoneField(idx, e.target.value)}
+                                            maxLength={20}
+                                            style={{ flex: 1 }}
+                                        />
+                                        {orgInputPhones.length > 1 && (
+                                            <Button
+                                                icon={<DeleteOutlined />}
+                                                onClick={() => removePhoneField(idx)}
+                                                danger
+                                                size="large"
+                                            />
+                                        )}
+                                    </div>
+                                ))}
+                                <Button
+                                    type="dashed"
+                                    icon={<PlusCircleOutlined />}
+                                    onClick={addPhoneField}
+                                    size="small"
+                                    style={{ marginTop: 0 }}
+                                >
+                                    Add Another Phone Number
+                                </Button>
+                            </Col>
+                            <Col xs={24} md={12}>
+                                <Text strong style={{ display: 'block', marginBottom: 6, fontSize: 13 }}>
+                                    Address
+                                </Text>
+                                <Input.TextArea
+                                    rows={3}
+                                    placeholder="e.g. Main Road, Block 5, Karachi"
+                                    value={orgInputAddress}
+                                    onChange={(e) => setOrgInputAddress(e.target.value)}
+                                    maxLength={300}
+                                />
+                            </Col>
+                        </Row>
+                        <div style={{ marginTop: 16, display: 'flex', gap: 8 }}>
                             <Button
                                 type="primary"
                                 size="large"
                                 icon={<SaveOutlined />}
                                 loading={savingOrg}
-                                onClick={handleSaveOrgName}
+                                onClick={handleSaveOrgSettings}
                             >
-                                Save Changes
+                                {isConfigured ? 'Save Changes' : 'Save Organization Settings'}
                             </Button>
-                            <Button
-                                size="large"
-                                onClick={() => {
-                                    setIsEditingOrg(false);
-                                    setOrgInputName(organizationName);
-                                }}
-                            >
-                                Cancel
-                            </Button>
-                        </Space.Compact>
-                        <Text type="secondary" style={{ display: 'block', marginTop: 8, fontSize: 12 }}>
-                            Updating replaces the existing name without duplicate records and instantly updates all new prints and PDFs.
+                            {isConfigured && isEditingOrg && (
+                                <Button
+                                    size="large"
+                                    onClick={() => {
+                                        setIsEditingOrg(false);
+                                        resetOrgInputs();
+                                    }}
+                                >
+                                    Cancel
+                                </Button>
+                            )}
+                        </div>
+                        <Text type="secondary" style={{ display: 'block', marginTop: 10, fontSize: 12 }}>
+                            These details appear on all printable vouchers, receipts, and academic reports.
+                        </Text>
+                    </div>
+                )}
+
+                {/* Not configured — non-admin message */}
+                {!isConfigured && !(user?.role === 'ADMIN' || user?.role === 'SUPERADMIN') && (
+                    <div style={{ marginTop: 8, padding: '16px', background: '#ffffff', borderRadius: '8px', border: '1px solid #d9d9d9' }}>
+                        <Text type="secondary">
+                            Organization has not been configured yet. Please contact an administrator.
+                        </Text>
+                    </div>
+                )}
+
+                {/* Display Saved Details (Configured, not editing) */}
+                {isConfigured && !isEditingOrg && (
+                    <div style={{ marginTop: 12, padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
+                        <Row gutter={[16, 12]}>
+                            <Col xs={24} md={12}>
+                                <Text type="secondary" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block' }}>Organization Name</Text>
+                                <Text strong style={{ fontSize: 17, color: '#0f172a' }}>{organizationName}</Text>
+                            </Col>
+                            <Col xs={24} md={12}>
+                                <Text type="secondary" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block' }}>Email</Text>
+                                <Text style={{ fontSize: 14, color: '#334155' }}>
+                                    {orgEmail ? <><MailOutlined style={{ marginRight: 6, color: '#8c8c8c' }} />{orgEmail}</> : <Text type="secondary">Not set</Text>}
+                                </Text>
+                            </Col>
+                            <Col xs={24} md={12}>
+                                <Text type="secondary" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block' }}>Phone Numbers</Text>
+                                {orgPhoneNumbers && orgPhoneNumbers.length > 0 ? (
+                                    orgPhoneNumbers.map((p, i) => (
+                                        <Text key={i} style={{ fontSize: 14, color: '#334155', display: 'block' }}>
+                                            <PhoneOutlined style={{ marginRight: 6, color: '#8c8c8c' }} />{p}
+                                        </Text>
+                                    ))
+                                ) : (
+                                    <Text type="secondary">Not set</Text>
+                                )}
+                            </Col>
+                            <Col xs={24} md={12}>
+                                <Text type="secondary" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block' }}>Address</Text>
+                                <Text style={{ fontSize: 14, color: '#334155' }}>
+                                    {orgAddress ? <><HomeOutlined style={{ marginRight: 6, color: '#8c8c8c' }} />{orgAddress}</> : <Text type="secondary">Not set</Text>}
+                                </Text>
+                            </Col>
+                        </Row>
+                        <Text type="secondary" style={{ fontSize: 12, fontStyle: 'italic', display: 'block', marginTop: 10 }}>
+                            Applied across all printable vouchers, receipts, and transcripts
                         </Text>
                     </div>
                 )}
