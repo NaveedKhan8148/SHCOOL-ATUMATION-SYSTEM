@@ -324,9 +324,41 @@ const Teachers = () => {
             fetchTeachers();
             handleCancel();
         } catch (err) {
-            const errorMsg = extractErrorMessage(err);
             console.error('Error in handleSave:', err);
-            message.error(errorMsg);
+            const backendErrors = err.response?.data?.errors;
+            const fieldErrors = [];
+
+            if (Array.isArray(backendErrors) && backendErrors.length > 0) {
+                backendErrors.forEach((e) => {
+                    if (e.field && e.message) {
+                        fieldErrors.push({ name: e.field, errors: [e.message] });
+                    }
+                });
+            }
+
+            // Fallback for unstructured error responses (e.g. string message containing field info)
+            if (fieldErrors.length === 0) {
+                const errorMsg = extractErrorMessage(err);
+                if (errorMsg.includes('cnicNumber') || errorMsg.includes('CNIC')) {
+                    fieldErrors.push({
+                        name: 'cnicNumber',
+                        errors: ['This CNIC number is already registered. Please use a different CNIC number.']
+                    });
+                }
+                if (errorMsg.includes('email') || errorMsg.includes('Email')) {
+                    fieldErrors.push({
+                        name: 'email',
+                        errors: ['This email address is already registered. Please use a different email address.']
+                    });
+                }
+            }
+
+            if (fieldErrors.length > 0) {
+                form.setFields(fieldErrors);
+            } else {
+                const errorMsg = extractErrorMessage(err);
+                message.error(errorMsg);
+            }
         } finally {
             setSubmitLoading(false);
         }
@@ -477,6 +509,18 @@ const Teachers = () => {
                     autoComplete='off'
                     initialValues={{
                         status: 'ACTIVE',
+                    }}
+                    onValuesChange={(changedValues) => {
+                        const fieldsToClear = [];
+                        if ('cnicNumber' in changedValues) {
+                            fieldsToClear.push({ name: 'cnicNumber', errors: [] });
+                        }
+                        if ('email' in changedValues) {
+                            fieldsToClear.push({ name: 'email', errors: [] });
+                        }
+                        if (fieldsToClear.length > 0) {
+                            form.setFields(fieldsToClear);
+                        }
                     }}
                 >
                     <Form.Item

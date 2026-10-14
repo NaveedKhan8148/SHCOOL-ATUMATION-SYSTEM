@@ -58,8 +58,43 @@ describe('Teacher Controller', () => {
                 cnicNumber: '123', contactNumber: '123', subject: 'Math', dateOfJoining: '2023' 
             };
             User.findOne.mockResolvedValue({ _id: 'exist' });
+            Teacher.findOne.mockResolvedValue(null);
             await createTeacher(req, res, next);
-            expect(next).toHaveBeenCalledWith(expect.objectContaining({ message: "Email already registered" }));
+            expect(next).toHaveBeenCalledWith(expect.objectContaining({ 
+                statusCode: 409,
+                message: expect.stringContaining("This email address is already registered. Please use a different email address.")
+            }));
+        });
+
+        it('should throw error if CNIC exists', async () => {
+            req.body = { 
+                email: 'new@test.com', password: 'pass', name: 'John', 
+                cnicNumber: '15303-9728201-3', contactNumber: '123', subject: 'Math', dateOfJoining: '2023' 
+            };
+            User.findOne.mockResolvedValue(null);
+            Teacher.findOne.mockResolvedValue({ _id: 'existingTeacher' });
+            await createTeacher(req, res, next);
+            expect(next).toHaveBeenCalledWith(expect.objectContaining({ 
+                statusCode: 409,
+                message: expect.stringContaining("This CNIC number is already registered. Please use a different CNIC number.")
+            }));
+        });
+
+        it('should throw error with both fields if both CNIC and email exist', async () => {
+            req.body = { 
+                email: 'conflict@test.com', password: 'pass', name: 'John', 
+                cnicNumber: '15303-9728201-3', contactNumber: '123', subject: 'Math', dateOfJoining: '2023' 
+            };
+            User.findOne.mockResolvedValue({ _id: 'exist' });
+            Teacher.findOne.mockResolvedValue({ _id: 'existingTeacher' });
+            await createTeacher(req, res, next);
+            expect(next).toHaveBeenCalledWith(expect.objectContaining({ 
+                statusCode: 409,
+                errors: expect.arrayContaining([
+                    expect.objectContaining({ field: 'cnicNumber' }),
+                    expect.objectContaining({ field: 'email' })
+                ])
+            }));
         });
 
         it('should create teacher successfully', async () => {
@@ -68,6 +103,7 @@ describe('Teacher Controller', () => {
                 cnicNumber: '123', contactNumber: '123', subject: 'Math', dateOfJoining: '2023', address: 'Home' 
             };
             User.findOne.mockResolvedValue(null);
+            Teacher.findOne.mockResolvedValue(null);
             User.create.mockResolvedValue({ _id: 'userId', role: 'TEACHER' });
             Teacher.create.mockResolvedValue({ _id: 'teacherId', name: 'John' });
 

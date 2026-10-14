@@ -67,6 +67,33 @@ app.use((err, req, res, next) => {
             data: err.data
         });
     }
+
+    // Handle MongoDB duplicate key error (E11000)
+    if (err.code === 11000 || err.name === "MongoServerError") {
+        const fieldErrors = [];
+        const keyPattern = err.keyPattern || {};
+        let userMessage = "Duplicate field value entered";
+
+        if (keyPattern.cnicNumber || (err.message && err.message.includes("cnicNumber"))) {
+            userMessage = "This CNIC number is already registered. Please use a different CNIC number.";
+            fieldErrors.push({ field: "cnicNumber", message: userMessage });
+        } else if (keyPattern.email || (err.message && err.message.includes("email"))) {
+            userMessage = "This email address is already registered. Please use a different email address.";
+            fieldErrors.push({ field: "email", message: userMessage });
+        } else {
+            const conflictKey = Object.keys(keyPattern).find(k => k !== "organizationId") || "record";
+            userMessage = `A record with this ${conflictKey} already exists.`;
+            fieldErrors.push({ field: conflictKey, message: userMessage });
+        }
+
+        return res.status(409).json({
+            success: false,
+            message: userMessage,
+            statusCode: 409,
+            errors: fieldErrors,
+            data: null
+        });
+    }
     
     // Log the error for debugging
     console.error('Error:', err);
